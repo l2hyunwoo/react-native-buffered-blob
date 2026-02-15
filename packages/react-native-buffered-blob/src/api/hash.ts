@@ -9,6 +9,6 @@ export async function hashFile(
   try {
     return await NativeModule.hashFile(path, algorithm);
   } catch (e) {
-    throw wrapError(e);
+    throw wrapError(e, path);
   }
 }

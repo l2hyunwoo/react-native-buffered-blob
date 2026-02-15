@@ -1,6 +1,6 @@
 import { NativeModule, getStreamingProxy } from '../module';
 import { wrapError } from '../errors';
-import { wrapReader } from '../types';
+import { wrapReader } from '../wrappers';
 import type { BlobReader } from '../types';
 
 const DEFAULT_BUFFER_SIZE = 65536; // 64KB
@@ -14,6 +14,6 @@ export function createReader(
     const streaming = getStreamingProxy();
     return wrapReader(handleId, streaming);
   } catch (e) {
-    throw wrapError(e);
+    throw wrapError(e, path);
   }
 }

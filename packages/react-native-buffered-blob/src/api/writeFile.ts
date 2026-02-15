@@ -1,6 +1,6 @@
 import { NativeModule, getStreamingProxy } from '../module';
 import { wrapError } from '../errors';
-import { wrapWriter } from '../types';
+import { wrapWriter } from '../wrappers';
 import type { BlobWriter } from '../types';
 
 export function createWriter(
@@ -12,6 +12,6 @@ export function createWriter(
     const streaming = getStreamingProxy();
     return wrapWriter(handleId, streaming);
   } catch (e) {
-    throw wrapError(e);
+    throw wrapError(e, path);
   }
 }

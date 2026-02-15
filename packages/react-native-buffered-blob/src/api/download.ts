@@ -28,6 +28,6 @@ export async function download(options: DownloadOptions): Promise<void> {
       NativeModule.closeHandle(handleId);
     }
   } catch (e) {
-    throw wrapError(e);
+    throw wrapError(e, destPath);
   }
 }

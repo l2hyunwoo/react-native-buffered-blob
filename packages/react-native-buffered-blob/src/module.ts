@@ -1,7 +1,4 @@
-import { TurboModuleRegistry } from 'react-native';
-import type { Spec } from './NativeBufferedBlob';
-
-const NativeModule = TurboModuleRegistry.getEnforcing<Spec>('BufferedBlob');
+import NativeModule from './NativeBufferedBlob';
 
 // Install JSI HostObject on first import
 NativeModule.install();
@@ -28,9 +25,14 @@ export interface StreamingProxy {
   getWriterInfo(handleId: number): { bytesWritten: number };
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __BufferedBlobStreaming: StreamingProxy | undefined;
+}
+
 // Access the JSI HostObject installed by native
 function getStreamingProxy(): StreamingProxy {
-  const proxy = (global as any).__BufferedBlobStreaming;
+  const proxy = globalThis.__BufferedBlobStreaming;
   if (!proxy) {
     throw new Error(
       '[BufferedBlob] Streaming proxy not available. Make sure install() was called.'

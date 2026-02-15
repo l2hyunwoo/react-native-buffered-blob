@@ -10,7 +10,8 @@ export const Dirs = Object.freeze({
 });
 
 export function join(...parts: string[]): string {
-  return parts.filter(Boolean).join('/').replace(/\/+/g, '/');
+  const result = parts.filter(Boolean).join('/').replace(/\/+/g, '/');
+  return result.length > 1 ? result.replace(/\/$/, '') : result;
 }
 
 export function dirname(path: string): string {
