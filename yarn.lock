@@ -10098,13 +10098,10 @@ __metadata:
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
     react-native-builder-bob: "npm:^0.40.18"
-    react-native-nitro-buffered-blob: "workspace:*"
-    react-native-nitro-modules: "npm:^0.33.9"
     typescript: "npm:^5.9.2"
   peerDependencies:
     react: "*"
-    react-native: "*"
-    react-native-nitro-modules: ^0.33.9
+    react-native: ">=0.76.0"
   languageName: unknown
   linkType: soft
 
@@ -10197,6 +10194,7 @@ __metadata:
     prettier: "npm:^2.8.8"
     react: "npm:19.2.0"
     react-native: "npm:0.83.0"
+    react-native-builder-bob: "npm:^0.40.18"
     react-native-nitro-modules: "npm:^0.33.9"
     release-it: "npm:^19.0.4"
     turbo: "npm:^2.5.6"
