@@ -65,8 +65,18 @@ export default function App() {
       log('mkdir: created test directory');
 
       // Write file using createWriter
-      const encoder = new TextEncoder();
-      const data = encoder.encode('Hello from Buffered Blob!');
+      // Use TextEncoder if available (Hermes 0.12+), fallback for older runtimes
+      const encode = (str: string): Uint8Array => {
+        if (typeof TextEncoder !== 'undefined') {
+          return new TextEncoder().encode(str);
+        }
+        const arr = new Uint8Array(str.length);
+        for (let i = 0; i < str.length; i++) {
+          arr[i] = str.charCodeAt(i);
+        }
+        return arr;
+      };
+      const data = encode('Hello from Buffered Blob!');
       const w = createWriter(testFile);
       await w.write(data.buffer as ArrayBuffer);
       await w.flush();
@@ -97,8 +107,11 @@ export default function App() {
         merged.set(new Uint8Array(c), offset);
         offset += c.byteLength;
       }
-      const decoder = new TextDecoder();
-      const content = decoder.decode(merged);
+      // Hermes does not support TextDecoder; decode UTF-8 manually
+      let content = '';
+      for (let i = 0; i < merged.length; i++) {
+        content += String.fromCharCode(merged[i]!);
+      }
       log(
         `createReader: "${content}"`,
         content === 'Hello from Buffered Blob!'
@@ -108,7 +121,7 @@ export default function App() {
       const streamFile = join(testDir, 'stream.txt');
       const writer = createWriter(streamFile);
       for (let i = 0; i < 3; i++) {
-        const chunk = encoder.encode(`Chunk ${i}\n`);
+        const chunk = encode(`Chunk ${i}\n`);
         await writer.write(chunk.buffer as ArrayBuffer);
       }
       await writer.flush();
@@ -181,7 +194,7 @@ export default function App() {
       const destPath = join(Dirs.temp, 'download-test.json');
 
       log('Starting download...');
-      await download({
+      const dl = download({
         url: 'https://httpbin.org/bytes/1024',
         destPath,
         onProgress: (progress) => {
@@ -192,6 +205,7 @@ export default function App() {
           );
         },
       });
+      await dl.promise;
 
       const fileExists = await exists(destPath);
       log(`Download complete, file exists: ${fileExists}`, fileExists);
