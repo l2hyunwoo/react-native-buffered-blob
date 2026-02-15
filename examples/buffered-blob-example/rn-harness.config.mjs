@@ -1,7 +1,4 @@
-import {
-  androidPlatform,
-  androidEmulator,
-} from '@react-native-harness/platform-android';
+import { androidPlatform } from '@react-native-harness/platform-android';
 import {
   applePlatform,
   appleSimulator,
@@ -14,12 +11,12 @@ export default {
   runners: [
     androidPlatform({
       name: 'android',
-      device: androidEmulator('Pixel_8_API_35'),
+      device: { type: 'physical', manufacturer: 'samsung', model: 'SM-S926N' },
       bundleId: 'com.bufferedblobexample',
     }),
     applePlatform({
       name: 'ios',
-      device: appleSimulator('iPhone 16 Pro', '18.0'),
+      device: appleSimulator('iPhone 17 Pro', '26.2'),
       bundleId: 'com.bufferedblobexample',
     }),
   ],
