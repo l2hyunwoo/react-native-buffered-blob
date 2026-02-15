@@ -25,6 +25,7 @@ public:
   AndroidPlatformBridge(JNIEnv* env);
   ~AndroidPlatformBridge() override;
 
+
   void readNextChunk(
     int handleId,
     std::function<void(std::vector<uint8_t>)> onSuccess,
@@ -60,7 +61,8 @@ public:
   WriterInfo getWriterInfo(int handleId) override;
 
 private:
-  jni::global_ref<jclass> bridgeClass_;
+  JavaVM* vm_;
+  jclass bridgeClass_{nullptr};
 
   // Thread pool for read/write/flush (not downloads)
   static constexpr size_t kPoolThreads = 4;

@@ -141,7 +141,11 @@ class BufferedBlobModule(reactContext: ReactApplicationContext)
       try {
         val file = File(path)
         if (!file.exists()) throw RuntimeException("[FILE_NOT_FOUND] File does not exist: $path")
-        if (!file.delete()) throw RuntimeException("[IO_ERROR] Failed to delete: $path")
+        if (file.isDirectory) {
+          if (!file.deleteRecursively()) throw RuntimeException("[IO_ERROR] Failed to delete directory: $path")
+        } else {
+          if (!file.delete()) throw RuntimeException("[IO_ERROR] Failed to delete: $path")
+        }
         promise.resolve(null)
       } catch (e: Exception) {
         promise.reject("ERR_FS", e.message, e)

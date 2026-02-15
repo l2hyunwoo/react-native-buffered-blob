@@ -13,6 +13,11 @@ using namespace facebook;
 void AndroidPlatformBridge::initThreadPool() {
   for (size_t i = 0; i < kPoolThreads; ++i) {
     poolWorkers_.emplace_back([this]() {
+      // Use fbjni::ThreadScope to attach this worker thread to the JVM.
+      // This registers the thread with fbjni's thread-local tracking so
+      // that Environment::current() works -- which is required by
+      // CallInvoker::invokeAsync() internally.
+      jni::ThreadScope threadScope;
       while (true) {
         std::function<void()> task;
         {
@@ -39,8 +44,10 @@ void AndroidPlatformBridge::submitTask(std::function<void()> task) {
 }
 
 AndroidPlatformBridge::AndroidPlatformBridge(JNIEnv* env) {
+  env->GetJavaVM(&vm_);
   auto clazz = env->FindClass("com/bufferedblob/StreamingBridge");
-  bridgeClass_ = jni::make_global(jni::adopt_local_ref(clazz));
+  bridgeClass_ = (jclass)env->NewGlobalRef(clazz);
+  env->DeleteLocalRef(clazz);
   initThreadPool();
 }
 
@@ -49,6 +56,13 @@ AndroidPlatformBridge::~AndroidPlatformBridge() {
   queueCV_.notify_all();
   for (auto& worker : poolWorkers_) {
     if (worker.joinable()) worker.join();
+  }
+  // Clean up global ref
+  if (bridgeClass_) {
+    JNIEnv* env = nullptr;
+    if (vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK && env) {
+      env->DeleteGlobalRef(bridgeClass_);
+    }
   }
 }
 
@@ -59,22 +73,20 @@ void AndroidPlatformBridge::readNextChunk(
     std::function<void(std::vector<uint8_t>)> onSuccess,
     std::function<void()> onEOF,
     std::function<void(std::string)> onError) {
-  auto bridgeClass = bridgeClass_;
-  submitTask([bridgeClass, handleId, onSuccess = std::move(onSuccess),
+  // Capture raw jclass (global ref) -- no fbjni copy, safe from any thread.
+  jclass cls = bridgeClass_;
+  submitTask([cls, handleId, onSuccess = std::move(onSuccess),
                onEOF = std::move(onEOF), onError = std::move(onError)]() {
     try {
-      jni::ThreadScope ts;
       JNIEnv* env = jni::Environment::current();
 
-      jmethodID method = env->GetStaticMethodID(
-          bridgeClass.get(), "readNextChunk", "(I)[B");
+      jmethodID method = env->GetStaticMethodID(cls, "readNextChunk", "(I)[B");
       if (!method) {
         onError("readNextChunk method not found");
         return;
       }
 
-      auto result = (jbyteArray)env->CallStaticObjectMethod(
-          bridgeClass.get(), method, handleId);
+      auto result = (jbyteArray)env->CallStaticObjectMethod(cls, method, handleId);
 
       if (env->ExceptionCheck()) {
         jthrowable ex = env->ExceptionOccurred();
@@ -99,14 +111,12 @@ void AndroidPlatformBridge::readNextChunk(
 
       jsize len = env->GetArrayLength(result);
       std::vector<uint8_t> data(len);
-      // Use GetPrimitiveArrayCritical for zero-copy access when possible
       jbyte* rawBytes = static_cast<jbyte*>(
           env->GetPrimitiveArrayCritical(result, nullptr));
       if (rawBytes) {
         std::memcpy(data.data(), rawBytes, len);
         env->ReleasePrimitiveArrayCritical(result, rawBytes, JNI_ABORT);
       } else {
-        // Fallback if VM cannot pin the array
         env->GetByteArrayRegion(
             result, 0, len, reinterpret_cast<jbyte*>(data.data()));
       }
@@ -125,17 +135,15 @@ void AndroidPlatformBridge::write(
     std::vector<uint8_t> data,
     std::function<void(int)> onSuccess,
     std::function<void(std::string)> onError) {
-  auto bridgeClass = bridgeClass_;
+  jclass cls = bridgeClass_;
 
-  submitTask([bridgeClass, handleId, dataCopy = std::move(data),
+  submitTask([cls, handleId, dataCopy = std::move(data),
                onSuccess = std::move(onSuccess),
                onError = std::move(onError)]() {
     try {
-      jni::ThreadScope ts;
       JNIEnv* env = jni::Environment::current();
 
-      jmethodID method = env->GetStaticMethodID(
-          bridgeClass.get(), "write", "(I[B)I");
+      jmethodID method = env->GetStaticMethodID(cls, "write", "(I[B)I");
       if (!method) {
         onError("write method not found");
         return;
@@ -146,8 +154,7 @@ void AndroidPlatformBridge::write(
           arr, 0, static_cast<jsize>(dataCopy.size()),
           reinterpret_cast<const jbyte*>(dataCopy.data()));
 
-      jint result = env->CallStaticIntMethod(
-          bridgeClass.get(), method, handleId, arr);
+      jint result = env->CallStaticIntMethod(cls, method, handleId, arr);
       env->DeleteLocalRef(arr);
 
       if (env->ExceptionCheck()) {
@@ -179,22 +186,20 @@ void AndroidPlatformBridge::flush(
     int handleId,
     std::function<void()> onSuccess,
     std::function<void(std::string)> onError) {
-  auto bridgeClass = bridgeClass_;
+  jclass cls = bridgeClass_;
 
-  submitTask([bridgeClass, handleId, onSuccess = std::move(onSuccess),
+  submitTask([cls, handleId, onSuccess = std::move(onSuccess),
                onError = std::move(onError)]() {
     try {
-      jni::ThreadScope ts;
       JNIEnv* env = jni::Environment::current();
 
-      jmethodID method = env->GetStaticMethodID(
-          bridgeClass.get(), "flush", "(I)V");
+      jmethodID method = env->GetStaticMethodID(cls, "flush", "(I)V");
       if (!method) {
         onError("flush method not found");
         return;
       }
 
-      env->CallStaticVoidMethod(bridgeClass.get(), method, handleId);
+      env->CallStaticVoidMethod(cls, method, handleId);
 
       if (env->ExceptionCheck()) {
         jthrowable ex = env->ExceptionOccurred();
@@ -219,17 +224,20 @@ void AndroidPlatformBridge::flush(
   });
 }
 
-// --- Close (synchronous) ---
+// --- Close (synchronous, called from JS thread) ---
 
 void AndroidPlatformBridge::close(int handleId) {
   try {
-    jni::ThreadScope ts;
-    JNIEnv* env = jni::Environment::current();
+    // Use raw JNI GetEnv -- this may be called from the JS thread which
+    // is not registered with fbjni's thread-local tracking.
+    JNIEnv* env = nullptr;
+    if (vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
+      return;
+    }
 
-    jmethodID method = env->GetStaticMethodID(
-        bridgeClass_.get(), "close", "(I)V");
+    jmethodID method = env->GetStaticMethodID(bridgeClass_, "close", "(I)V");
     if (method) {
-      env->CallStaticVoidMethod(bridgeClass_.get(), method, handleId);
+      env->CallStaticVoidMethod(bridgeClass_, method, handleId);
       if (env->ExceptionCheck()) {
         env->ExceptionClear();
       }
@@ -246,71 +254,70 @@ void AndroidPlatformBridge::startDownload(
     std::function<void(double, double, double)> onProgress,
     std::function<void()> onSuccess,
     std::function<void(std::string)> onError) {
-  auto bridgeClass = bridgeClass_;
+  // Capture raw jclass pointer -- avoids fbjni global_ref copy which calls
+  // Environment::current() and crashes on threads without fbjni TLData.
+  jclass cls = bridgeClass_;
 
-  // Downloads use a dedicated joinable thread (not the pool) to avoid
-  // starvation -- downloads can block for minutes.
-  auto downloadThread = std::thread([bridgeClass, handleId,
-               onProgress = std::move(onProgress),
-               onSuccess = std::move(onSuccess),
-               onError = std::move(onError)]() {
-    try {
-      jni::ThreadScope ts;
-      JNIEnv* env = jni::Environment::current();
+  auto done = std::make_shared<std::atomic<bool>>(false);
 
-      // Start progress polling in a lightweight timer thread
-      auto done = std::make_shared<std::atomic<bool>>(false);
+  // Progress polling: timer thread sleeps, then submits JNI work to pool.
+  auto self = this;
+  std::thread([self, cls, handleId, onProgress, done]() {
+    while (!done->load()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      if (done->load()) break;
 
-      std::thread pollThread([bridgeClass, handleId, onProgress, done]() {
+      self->submitTask([cls, handleId, onProgress, done]() {
+        if (done->load()) return;
         try {
-          jni::ThreadScope pts;
           JNIEnv* pEnv = jni::Environment::current();
 
           jmethodID getBytesMethod = pEnv->GetStaticMethodID(
-              bridgeClass.get(), "getDownloadBytesDownloaded", "(I)J");
+              cls, "getDownloadBytesDownloaded", "(I)J");
           jmethodID getTotalMethod = pEnv->GetStaticMethodID(
-              bridgeClass.get(), "getDownloadTotalBytes", "(I)J");
-
+              cls, "getDownloadTotalBytes", "(I)J");
           if (!getBytesMethod || !getTotalMethod) return;
 
-          while (!done->load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-            if (done->load()) break;
+          jlong downloaded = pEnv->CallStaticLongMethod(
+              cls, getBytesMethod, handleId);
+          jlong total = pEnv->CallStaticLongMethod(
+              cls, getTotalMethod, handleId);
+          if (pEnv->ExceptionCheck()) { pEnv->ExceptionClear(); return; }
 
-            jlong downloaded = pEnv->CallStaticLongMethod(
-                bridgeClass.get(), getBytesMethod, handleId);
-            jlong total = pEnv->CallStaticLongMethod(
-                bridgeClass.get(), getTotalMethod, handleId);
-            if (pEnv->ExceptionCheck()) { pEnv->ExceptionClear(); break; }
-
-            if (total > 0) {
-              double progress = static_cast<double>(downloaded) / static_cast<double>(total);
-              onProgress(static_cast<double>(downloaded),
-                         static_cast<double>(total), progress);
-            } else if (downloaded > 0) {
-              onProgress(static_cast<double>(downloaded), -1.0, -1.0);
-            }
+          if (total > 0) {
+            double progress = static_cast<double>(downloaded) / static_cast<double>(total);
+            onProgress(static_cast<double>(downloaded),
+                       static_cast<double>(total), progress);
+          } else if (downloaded > 0) {
+            onProgress(static_cast<double>(downloaded), -1.0, -1.0);
           }
         } catch (...) {
           // Polling failure is non-fatal
         }
       });
+    }
+  }).detach();
 
-      // Call startDownload synchronously (blocks until download completes)
-      jmethodID method = env->GetStaticMethodID(
-          bridgeClass.get(), "startDownload", "(I)V");
+  // Download thread: uses ThreadScope for fbjni-compatible attachment.
+  auto downloadThread = std::thread([cls, handleId, done,
+               onProgress = std::move(onProgress),
+               onSuccess = std::move(onSuccess),
+               onError = std::move(onError)]() {
+    try {
+      jni::ThreadScope threadScope;
+      JNIEnv* env = jni::Environment::current();
+
+      jmethodID method = env->GetStaticMethodID(cls, "startDownload", "(I)V");
       if (!method) {
         done->store(true);
-        if (pollThread.joinable()) pollThread.join();
         onError("startDownload method not found");
         return;
       }
 
-      env->CallStaticVoidMethod(bridgeClass.get(), method, handleId);
+      env->CallStaticVoidMethod(cls, method, handleId);
 
-      // Signal polling thread to stop and wait for it
+      // Signal polling to stop
       done->store(true);
-      if (pollThread.joinable()) pollThread.join();
 
       if (env->ExceptionCheck()) {
         jthrowable ex = env->ExceptionOccurred();
@@ -330,14 +337,14 @@ void AndroidPlatformBridge::startDownload(
 
       // Read final progress values for a 100% callback
       jmethodID getBytesMethod = env->GetStaticMethodID(
-          bridgeClass.get(), "getDownloadBytesDownloaded", "(I)J");
+          cls, "getDownloadBytesDownloaded", "(I)J");
       jmethodID getTotalMethod = env->GetStaticMethodID(
-          bridgeClass.get(), "getDownloadTotalBytes", "(I)J");
+          cls, "getDownloadTotalBytes", "(I)J");
       if (getBytesMethod && getTotalMethod) {
         jlong finalDownloaded = env->CallStaticLongMethod(
-            bridgeClass.get(), getBytesMethod, handleId);
+            cls, getBytesMethod, handleId);
         jlong finalTotal = env->CallStaticLongMethod(
-            bridgeClass.get(), getTotalMethod, handleId);
+            cls, getTotalMethod, handleId);
         if (!env->ExceptionCheck() && finalTotal > 0) {
           onProgress(static_cast<double>(finalDownloaded),
                      static_cast<double>(finalTotal), 1.0);
@@ -347,23 +354,23 @@ void AndroidPlatformBridge::startDownload(
 
       onSuccess();
     } catch (const std::exception& e) {
+      done->store(true);
       onError(std::string("JNI error: ") + e.what());
     }
   });
-  // Detach download thread -- it manages its own polling thread lifecycle
-  // and will complete when the download finishes
   downloadThread.detach();
 }
 
 void AndroidPlatformBridge::cancelDownload(int handleId) {
   try {
-    jni::ThreadScope ts;
-    JNIEnv* env = jni::Environment::current();
+    JNIEnv* env = nullptr;
+    if (vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
+      return;
+    }
 
-    jmethodID method = env->GetStaticMethodID(
-        bridgeClass_.get(), "cancelDownload", "(I)V");
+    jmethodID method = env->GetStaticMethodID(bridgeClass_, "cancelDownload", "(I)V");
     if (method) {
-      env->CallStaticVoidMethod(bridgeClass_.get(), method, handleId);
+      env->CallStaticVoidMethod(bridgeClass_, method, handleId);
       if (env->ExceptionCheck()) {
         env->ExceptionClear();
       }
@@ -376,30 +383,28 @@ void AndroidPlatformBridge::cancelDownload(int handleId) {
 PlatformBridge::ReaderInfo AndroidPlatformBridge::getReaderInfo(int handleId) {
   ReaderInfo info{0, 0, false};
   try {
-    jni::ThreadScope ts;
-    JNIEnv* env = jni::Environment::current();
+    JNIEnv* env = nullptr;
+    if (vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
+      return info;
+    }
 
-    jmethodID method = env->GetStaticMethodID(
-        bridgeClass_.get(), "getReaderFileSize", "(I)J");
+    jmethodID method = env->GetStaticMethodID(bridgeClass_, "getReaderFileSize", "(I)J");
     if (method) {
       info.fileSize = static_cast<double>(
-          env->CallStaticLongMethod(bridgeClass_.get(), method, handleId));
+          env->CallStaticLongMethod(bridgeClass_, method, handleId));
       if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
-    method = env->GetStaticMethodID(
-        bridgeClass_.get(), "getReaderBytesRead", "(I)J");
+    method = env->GetStaticMethodID(bridgeClass_, "getReaderBytesRead", "(I)J");
     if (method) {
       info.bytesRead = static_cast<double>(
-          env->CallStaticLongMethod(bridgeClass_.get(), method, handleId));
+          env->CallStaticLongMethod(bridgeClass_, method, handleId));
       if (env->ExceptionCheck()) env->ExceptionClear();
     }
 
-    method = env->GetStaticMethodID(
-        bridgeClass_.get(), "getReaderIsEOF", "(I)Z");
+    method = env->GetStaticMethodID(bridgeClass_, "getReaderIsEOF", "(I)Z");
     if (method) {
-      info.isEOF = env->CallStaticBooleanMethod(
-          bridgeClass_.get(), method, handleId);
+      info.isEOF = env->CallStaticBooleanMethod(bridgeClass_, method, handleId);
       if (env->ExceptionCheck()) env->ExceptionClear();
     }
   } catch (...) {
@@ -411,14 +416,16 @@ PlatformBridge::ReaderInfo AndroidPlatformBridge::getReaderInfo(int handleId) {
 PlatformBridge::WriterInfo AndroidPlatformBridge::getWriterInfo(int handleId) {
   WriterInfo info{0};
   try {
-    jni::ThreadScope ts;
-    JNIEnv* env = jni::Environment::current();
+    JNIEnv* env = nullptr;
+    if (vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK || !env) {
+      return info;
+    }
 
     jmethodID method = env->GetStaticMethodID(
-        bridgeClass_.get(), "getWriterBytesWritten", "(I)J");
+        bridgeClass_, "getWriterBytesWritten", "(I)J");
     if (method) {
       info.bytesWritten = static_cast<double>(
-          env->CallStaticLongMethod(bridgeClass_.get(), method, handleId));
+          env->CallStaticLongMethod(bridgeClass_, method, handleId));
       if (env->ExceptionCheck()) env->ExceptionClear();
     }
   } catch (...) {
