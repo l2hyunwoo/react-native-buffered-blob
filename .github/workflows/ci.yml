@@ -101,6 +101,13 @@ jobs:
         run: |
           /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
 
+      - name: Install NDK
+        if: env.turbo_cache_hit != 1
+        run: |
+          # Clean up any partial NDK installation to avoid symlink conflicts
+          rm -rf "$ANDROID_HOME/ndk/27.1.12297006"
+          rm -rf "$ANDROID_HOME/.temp"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.1.12297006"
 
       - name: Cache Gradle
         if: env.turbo_cache_hit != 1
@@ -109,7 +116,7 @@ jobs:
           path: |
             ~/.gradle/wrapper
             ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('examples/*/android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
@@ -163,10 +170,14 @@ jobs:
       - name: Install cocoapods
         if: env.turbo_cache_hit != 1 && steps.cocoapods-cache.outputs.cache-hit != 'true'
         run: |
-          cd example
-          bundle install
-          bundle exec pod repo update --verbose
-          bundle exec pod install --project-directory=ios
+          for dir in examples/*/; do
+            echo "Installing pods for $dir"
+            cd "$dir"
+            bundle install
+            bundle exec pod repo update --verbose
+            bundle exec pod install --project-directory=ios
+            cd "$GITHUB_WORKSPACE"
+          done
 
       - name: Build example for iOS
         run: |
