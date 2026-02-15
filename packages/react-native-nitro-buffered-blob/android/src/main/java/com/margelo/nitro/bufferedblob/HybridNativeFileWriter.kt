@@ -3,16 +3,14 @@ package com.margelo.nitro.bufferedblob
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.ArrayBuffer
 import com.margelo.nitro.core.Promise
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.FileOutputStream
 import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 @DoNotStrip
-class HybridNativeFileWriter(
-  private val filePath: String,
-  private val append: Boolean
-) : HybridNativeFileWriterSpec() {
+class HybridNativeFileWriter(private val filePath: String, private val append: Boolean) :
+        HybridNativeFileWriterSpec() {
 
   private var outputStream: FileOutputStream? = null
   @Volatile private var _bytesWritten: Long = 0
@@ -29,17 +27,17 @@ class HybridNativeFileWriter(
   }
 
   override fun write(data: ArrayBuffer): Promise<Long> {
-    return Promise.async(Dispatchers.IO) {
+    val bytes = data.toByteArray()
+
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       synchronized(this) {
         if (isClosed) {
           throw Exception("[STREAM_CLOSED] FileWriter already closed: $filePath")
         }
 
-        val stream = outputStream ?: throw Exception("[STREAM_CLOSED] FileWriter already closed: $filePath")
-
-        // CRITICAL: Copy data from non-owning JS ArrayBuffer before async use
-        val bytes = ByteArray(data.size)
-        data.read(bytes, 0, data.size)
+        val stream =
+                outputStream
+                        ?: throw Exception("[STREAM_CLOSED] FileWriter already closed: $filePath")
 
         stream.write(bytes)
         _bytesWritten += bytes.size.toLong()
@@ -50,13 +48,15 @@ class HybridNativeFileWriter(
   }
 
   override fun flush(): Promise<Unit> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       synchronized(this) {
         if (isClosed) {
           throw Exception("[STREAM_CLOSED] FileWriter already closed: $filePath")
         }
 
-        val stream = outputStream ?: throw Exception("[STREAM_CLOSED] FileWriter already closed: $filePath")
+        val stream =
+                outputStream
+                        ?: throw Exception("[STREAM_CLOSED] FileWriter already closed: $filePath")
         stream.flush()
       }
     }

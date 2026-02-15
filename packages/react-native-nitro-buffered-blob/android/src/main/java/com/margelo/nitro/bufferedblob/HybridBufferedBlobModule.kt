@@ -2,17 +2,16 @@ package com.margelo.nitro.bufferedblob
 
 import android.os.Environment
 import com.facebook.proguard.annotations.DoNotStrip
-import com.facebook.react.bridge.ReactApplicationContext
+import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.Promise
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
 
 @DoNotStrip
-class HybridBufferedBlobModule(
-  private val reactContext: ReactApplicationContext
-) : HybridBufferedBlobModuleSpec() {
+class HybridBufferedBlobModule : HybridBufferedBlobModuleSpec() {
 
   companion object {
     private const val MIN_BUFFER_SIZE = 4096
@@ -20,15 +19,16 @@ class HybridBufferedBlobModule(
     private const val HASH_CHUNK_SIZE = 8192
   }
 
-  // Directory paths
+  private val appContext get() = NitroModules.applicationContext!!
+
   override val documentDir: String
-    get() = reactContext.filesDir.absolutePath
+    get() = appContext.filesDir.absolutePath
 
   override val cacheDir: String
-    get() = reactContext.cacheDir.absolutePath
+    get() = appContext.cacheDir.absolutePath
 
   override val tempDir: String
-    get() = System.getProperty("java.io.tmpdir") ?: reactContext.cacheDir.absolutePath
+    get() = System.getProperty("java.io.tmpdir") ?: appContext.cacheDir.absolutePath
 
   override val downloadDir: String
     get() = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath
@@ -66,13 +66,13 @@ class HybridBufferedBlobModule(
 
   // File System Operations
   override fun exists(path: String): Promise<Boolean> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       File(path).exists()
     }
   }
 
   override fun stat(path: String): Promise<FileInfo> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val file = File(path)
       if (!file.exists()) {
         throw Exception("[FILE_NOT_FOUND] File does not exist: $path")
@@ -95,7 +95,7 @@ class HybridBufferedBlobModule(
   }
 
   override fun unlink(path: String): Promise<Unit> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val file = File(path)
       if (!file.exists()) {
         throw Exception("[FILE_NOT_FOUND] File does not exist: $path")
@@ -107,7 +107,7 @@ class HybridBufferedBlobModule(
   }
 
   override fun mkdir(path: String): Promise<Unit> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val file = File(path)
       if (file.exists()) {
         if (!file.isDirectory) {
@@ -122,7 +122,7 @@ class HybridBufferedBlobModule(
   }
 
   override fun ls(path: String): Promise<Array<FileInfo>> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val dir = File(path)
       if (!dir.exists()) {
         throw Exception("[FILE_NOT_FOUND] Directory does not exist: $path")
@@ -151,7 +151,7 @@ class HybridBufferedBlobModule(
   }
 
   override fun cp(srcPath: String, destPath: String): Promise<Unit> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val srcFile = File(srcPath)
       if (!srcFile.exists()) {
         throw Exception("[FILE_NOT_FOUND] Source file does not exist: $srcPath")
@@ -168,7 +168,7 @@ class HybridBufferedBlobModule(
   }
 
   override fun mv(srcPath: String, destPath: String): Promise<Unit> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val srcFile = File(srcPath)
       if (!srcFile.exists()) {
         throw Exception("[FILE_NOT_FOUND] Source file does not exist: $srcPath")
@@ -193,7 +193,7 @@ class HybridBufferedBlobModule(
 
   // Hashing
   override fun hashFile(path: String, algorithm: HashAlgorithm): Promise<String> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       val file = File(path)
       if (!file.exists()) {
         throw Exception("[FILE_NOT_FOUND] File does not exist: $path")

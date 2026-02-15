@@ -10588,8 +10588,6 @@ __metadata:
     react-native-builder-bob: "npm:^0.40.18"
     react-native-harness: "npm:^1.0.0-alpha.25"
     react-native-monorepo-config: "npm:^0.3.3"
-    react-native-nitro-buffered-blob: "workspace:*"
-    react-native-nitro-modules: "npm:^0.33.9"
   languageName: unknown
   linkType: soft
 

@@ -2,6 +2,7 @@ package com.margelo.nitro.bufferedblob
 
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.Promise
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.OkHttpClient
@@ -38,7 +39,7 @@ class HybridNativeDownloader(
     get() = _isCancelled
 
   override fun start(onProgress: (progress: DownloadProgress) -> Unit): Promise<Unit> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       if (_isCancelled) {
         throw Exception("[DOWNLOAD_CANCELLED] Download was cancelled: $url")
       }

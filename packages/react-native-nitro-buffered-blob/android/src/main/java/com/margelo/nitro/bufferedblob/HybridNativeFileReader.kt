@@ -3,8 +3,8 @@ package com.margelo.nitro.bufferedblob
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.core.ArrayBuffer
 import com.margelo.nitro.core.Promise
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import java.io.FileInputStream
 import java.io.File
 
@@ -43,7 +43,7 @@ class HybridNativeFileReader(
   }
 
   override fun readNextChunk(): Promise<ArrayBuffer?> {
-    return Promise.async(Dispatchers.IO) {
+    return Promise.async(CoroutineScope(Dispatchers.IO)) {
       synchronized(this) {
         if (isClosed) {
           throw Exception("[STREAM_CLOSED] FileReader already closed: $filePath")
@@ -64,7 +64,7 @@ class HybridNativeFileReader(
         _bytesRead += bytesReadNow
 
         val result = ArrayBuffer.allocate(bytesReadNow)
-        result.write(buffer, 0, bytesReadNow)
+        result.getBuffer(false).put(buffer, 0, bytesReadNow)
 
         return@async result
       }
