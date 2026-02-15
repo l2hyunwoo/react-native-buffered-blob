@@ -17,11 +17,11 @@
         "packages/react-native-nitro-buffered-blob/android/**",
         "!packages/react-native-nitro-buffered-blob/android/build",
         "packages/react-native-nitro-buffered-blob/src/**",
-        "example/package.json",
-        "example/android/**",
-        "!example/android/.gradle",
-        "!example/android/build",
-        "!example/android/app/build"
+        "examples/*/package.json",
+        "examples/*/android/**",
+        "!examples/*/android/.gradle",
+        "!examples/*/android/build",
+        "!examples/*/android/app/build"
       ],
       "outputs": []
     },
@@ -37,10 +37,10 @@
         "packages/react-native-nitro-buffered-blob/*.podspec",
         "packages/react-native-nitro-buffered-blob/ios/**",
         "packages/react-native-nitro-buffered-blob/src/**",
-        "example/package.json",
-        "example/ios/**",
-        "!example/ios/build",
-        "!example/ios/Pods"
+        "examples/*/package.json",
+        "examples/*/ios/**",
+        "!examples/*/ios/build",
+        "!examples/*/ios/Pods"
       ],
       "outputs": []
     }

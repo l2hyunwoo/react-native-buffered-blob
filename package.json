@@ -4,10 +4,11 @@
   "private": true,
   "description": "No more OOM, just use buffered-blob",
   "scripts": {
-    "example": "yarn workspace react-native-nitro-blob-example",
+    "example:blob": "yarn workspace react-native-buffered-blob-example",
+    "example:nitro": "yarn workspace react-native-nitro-buffered-blob-example",
     "native": "yarn workspace react-native-nitro-buffered-blob",
     "wrapper": "yarn workspace react-native-buffered-blob",
-    "clean": "del-cli packages/react-native-nitro-buffered-blob/android/build packages/react-native-nitro-buffered-blob/lib packages/react-native-buffered-blob/lib example/android/build example/android/app/build example/ios/build",
+    "clean": "del-cli packages/react-native-nitro-buffered-blob/android/build packages/react-native-nitro-buffered-blob/lib packages/react-native-buffered-blob/lib examples/*/android/build examples/*/android/app/build examples/*/ios/build",
     "prepare": "yarn native prepare && yarn wrapper prepare",
     "nitrogen": "yarn native nitrogen",
     "typecheck": "yarn native typecheck && yarn wrapper typecheck",
@@ -58,7 +59,7 @@
   },
   "workspaces": [
     "packages/*",
-    "example"
+    "examples/*"
   ],
   "packageManager": "yarn@4.12.0",
   "prettier": {
@@ -71,7 +72,7 @@
   "jest": {
     "preset": "react-native",
     "modulePathIgnorePatterns": [
-      "<rootDir>/example/node_modules",
+      "<rootDir>/examples/*/node_modules",
       "<rootDir>/packages/*/lib/"
     ]
   },
