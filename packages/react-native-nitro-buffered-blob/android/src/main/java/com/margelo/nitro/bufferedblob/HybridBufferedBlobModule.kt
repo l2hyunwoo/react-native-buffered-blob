@@ -181,7 +181,9 @@ class HybridBufferedBlobModule(
         // Fallback to copy + delete if rename fails (e.g., across filesystems)
         if (srcFile.isFile) {
           srcFile.copyTo(destFile, overwrite = true)
-          srcFile.delete()
+          if (!srcFile.delete()) {
+            throw Exception("[IO_ERROR] Move partially failed: copied but could not delete source: $srcPath")
+          }
         } else {
           throw Exception("[MOVE_FAILED] Failed to move file: $srcPath")
         }
