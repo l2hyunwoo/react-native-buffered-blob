@@ -12,6 +12,8 @@
   "dependencies": {
     "react": "19.2.0",
     "react-native": "0.83.0",
+    "react-native-buffered-blob": "workspace:*",
+    "react-native-nitro-buffered-blob": "workspace:*",
     "react-native-nitro-modules": "^0.33.9"
   },
   "devDependencies": {

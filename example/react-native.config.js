@@ -1,5 +1,5 @@
 const path = require('path');
-const pkg = require('../package.json');
+const pkg = require('react-native-nitro-buffered-blob/package.json');
 
 module.exports = {
   project: {
@@ -9,7 +9,12 @@ module.exports = {
   },
   dependencies: {
     [pkg.name]: {
-      root: path.join(__dirname, '..'),
+      root: path.join(
+        __dirname,
+        '..',
+        'packages',
+        'react-native-nitro-buffered-blob'
+      ),
       platforms: {
         // Codegen script incorrectly fails without this
         // So we explicitly specify the platforms with empty object
