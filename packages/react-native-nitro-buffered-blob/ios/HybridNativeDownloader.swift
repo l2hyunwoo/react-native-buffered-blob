@@ -1,25 +1,26 @@
 import NitroModules
 import Foundation
 
-class HybridNativeDownloader: NSObject, HybridNativeDownloaderSpec, URLSessionDataDelegate {
-  private let url: String
+class HybridNativeDownloader: HybridNativeDownloaderSpec {
+  fileprivate let url: String
   private let destPath: String
   private let headers: [String: String]
-  private var outputStream: OutputStream?
+  fileprivate var outputStream: OutputStream?
   private var session: URLSession?
   private var dataTask: URLSessionDataTask?
-  private var _isCancelled: Bool = false
-  private var onProgressCallback: ((_ progress: DownloadProgress) -> Void)?
-  private var totalBytes: Int64 = 0
-  private var downloadedBytes: Int64 = 0
+  fileprivate var _isCancelled: Bool = false
+  fileprivate var onProgressCallback: ((_ progress: DownloadProgress) -> Void)?
+  fileprivate var totalBytes: Int64 = 0
+  fileprivate var downloadedBytes: Int64 = 0
   private var continuation: CheckedContinuation<Void, Error>?
   private let continuationLock = NSLock()
+  private var sessionDelegate: SessionDelegate?
 
   var isCancelled: Bool {
     return _isCancelled
   }
 
-  override var memorySize: Int {
+  var memorySize: Int {
     return MemoryLayout<HybridNativeDownloader>.size
   }
 
@@ -29,8 +30,10 @@ class HybridNativeDownloader: NSObject, HybridNativeDownloaderSpec, URLSessionDa
     self.headers = headers
     super.init()
 
+    let delegate = SessionDelegate(owner: self)
+    self.sessionDelegate = delegate
     let config = URLSessionConfiguration.default
-    self.session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
   }
 
   func start(onProgress: @escaping (_ progress: DownloadProgress) -> Void) throws -> Promise<Void> {
@@ -114,7 +117,7 @@ class HybridNativeDownloader: NSObject, HybridNativeDownloaderSpec, URLSessionDa
     outputStream = nil
   }
 
-  private func resumeContinuation(with result: Result<Void, Error>) {
+  fileprivate func resumeContinuation(with result: Result<Void, Error>) {
     continuationLock.lock()
     let cont = continuation
     continuation = nil
@@ -128,26 +131,47 @@ class HybridNativeDownloader: NSObject, HybridNativeDownloaderSpec, URLSessionDa
     }
   }
 
-  // URLSessionDataDelegate methods
+  deinit {
+    try? cancel()
+    session?.invalidateAndCancel()
+    sessionDelegate = nil
+  }
+}
+
+// MARK: - URLSession delegate (requires NSObject)
+
+private class SessionDelegate: NSObject, URLSessionDataDelegate {
+  weak var owner: HybridNativeDownloader?
+
+  init(owner: HybridNativeDownloader) {
+    self.owner = owner
+    super.init()
+  }
+
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+    guard let owner = owner else {
+      completionHandler(.cancel)
+      return
+    }
+
     if let httpResponse = response as? HTTPURLResponse {
       if httpResponse.statusCode >= 400 {
         completionHandler(.cancel)
-        resumeContinuation(with: .failure(NSError(
+        owner.resumeContinuation(with: .failure(NSError(
           domain: "BufferedBlob",
           code: 6,
-          userInfo: [NSLocalizedDescriptionKey: "[DOWNLOAD_ERROR] HTTP error \(httpResponse.statusCode): \(url)"]
+          userInfo: [NSLocalizedDescriptionKey: "[DOWNLOAD_ERROR] HTTP error \(httpResponse.statusCode): \(owner.url)"]
         )))
         return
       }
     }
 
-    totalBytes = response.expectedContentLength
+    owner.totalBytes = response.expectedContentLength
     completionHandler(.allow)
   }
 
   func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-    guard let stream = outputStream, !_isCancelled else { return }
+    guard let owner = owner, let stream = owner.outputStream, !owner._isCancelled else { return }
 
     data.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
       guard let baseAddress = bytes.baseAddress else { return }
@@ -171,48 +195,46 @@ class HybridNativeDownloader: NSObject, HybridNativeDownloaderSpec, URLSessionDa
       }
     }
 
-    downloadedBytes += Int64(data.count)
+    owner.downloadedBytes += Int64(data.count)
 
     let progress: Double
-    if totalBytes > 0 {
-      progress = Double(downloadedBytes) / Double(totalBytes)
+    if owner.totalBytes > 0 {
+      progress = Double(owner.downloadedBytes) / Double(owner.totalBytes)
     } else {
       progress = 0.0
     }
 
     let downloadProgress = DownloadProgress(
-      bytesDownloaded: downloadedBytes,
-      totalBytes: totalBytes,
+      bytesDownloaded: owner.downloadedBytes,
+      totalBytes: owner.totalBytes,
       progress: progress
     )
 
-    onProgressCallback?(downloadProgress)
+    owner.onProgressCallback?(downloadProgress)
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    outputStream?.close()
-    outputStream = nil
+    guard let owner = owner else { return }
+
+    owner.outputStream?.close()
+    owner.outputStream = nil
 
     if let error = error {
-      if _isCancelled {
-        resumeContinuation(with: .failure(NSError(
+      if owner._isCancelled {
+        owner.resumeContinuation(with: .failure(NSError(
           domain: "BufferedBlob",
           code: 7,
           userInfo: [NSLocalizedDescriptionKey: "[DOWNLOAD_CANCELLED] Download was cancelled"]
         )))
       } else {
-        resumeContinuation(with: .failure(NSError(
+        owner.resumeContinuation(with: .failure(NSError(
           domain: "BufferedBlob",
           code: 8,
           userInfo: [NSLocalizedDescriptionKey: "[DOWNLOAD_ERROR] Download failed: \(error.localizedDescription)"]
         )))
       }
     } else {
-      resumeContinuation(with: .success(()))
+      owner.resumeContinuation(with: .success(()))
     }
-  }
-
-  deinit {
-    try? cancel()
   }
 }

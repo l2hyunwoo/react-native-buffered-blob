@@ -16,7 +16,7 @@ class HybridNativeFileWriter: HybridNativeFileWriterSpec {
     set { queue.sync { _isClosed = newValue } }
   }
 
-  override var memorySize: Int {
+  var memorySize: Int {
     return MemoryLayout<HybridNativeFileWriter>.size
   }
 
@@ -53,6 +53,10 @@ class HybridNativeFileWriter: HybridNativeFileWriterSpec {
       )
     }
 
+    // Copy the ArrayBuffer data synchronously before dispatching to background queue.
+    // JS ArrayBuffers are non-owning and their memory is only valid in the synchronous scope.
+    let ownedData = data.asOwning()
+
     return Promise.async { [weak self] in
       guard let self = self else {
         throw NSError(
@@ -64,57 +68,45 @@ class HybridNativeFileWriter: HybridNativeFileWriterSpec {
 
       return try await withCheckedThrowingContinuation { continuation in
         self.queue.async {
-          do {
-            let nsData = data.data
-            let totalBytes = nsData.count
-            var totalWritten = 0
+          let buffer = ownedData.data
+          let totalBytes = ownedData.size
 
-            nsData.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
-              guard let baseAddress = bytes.baseAddress else {
-                continuation.resume(throwing: NSError(
-                  domain: "BufferedBlob",
-                  code: 4,
-                  userInfo: [NSLocalizedDescriptionKey: "[WRITE_ERROR] Invalid data buffer"]
-                ))
-                return
-              }
-
-              let buffer = baseAddress.assumingMemoryBound(to: UInt8.self)
-              var offset = 0
-
-              while offset < totalBytes {
-                let remaining = totalBytes - offset
-                let bytesWritten = self.outputStream.write(buffer + offset, maxLength: remaining)
-
-                if bytesWritten < 0 {
-                  continuation.resume(throwing: NSError(
-                    domain: "BufferedBlob",
-                    code: 5,
-                    userInfo: [NSLocalizedDescriptionKey: "[WRITE_ERROR] Stream write failed"]
-                  ))
-                  return
-                }
-
-                if bytesWritten == 0 {
-                  // Stream cannot accept more data - this is an error for file streams
-                  continuation.resume(throwing: NSError(
-                    domain: "BufferedBlob",
-                    code: 5,
-                    userInfo: [NSLocalizedDescriptionKey: "[WRITE_ERROR] Stream write returned 0 bytes - stream may be full"]
-                  ))
-                  return
-                }
-
-                offset += bytesWritten
-                totalWritten += bytesWritten
-              }
-
-              self._bytesWritten += Int64(totalWritten)
-              continuation.resume(returning: Int64(totalWritten))
-            }
-          } catch {
-            continuation.resume(throwing: error)
+          guard totalBytes > 0 else {
+            continuation.resume(returning: 0)
+            return
           }
+
+          var offset = 0
+          var totalWritten = 0
+
+          while offset < totalBytes {
+            let remaining = totalBytes - offset
+            let bytesWritten = self.outputStream.write(buffer + offset, maxLength: remaining)
+
+            if bytesWritten < 0 {
+              continuation.resume(throwing: NSError(
+                domain: "BufferedBlob",
+                code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "[WRITE_ERROR] Stream write failed"]
+              ))
+              return
+            }
+
+            if bytesWritten == 0 {
+              continuation.resume(throwing: NSError(
+                domain: "BufferedBlob",
+                code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "[WRITE_ERROR] Stream write returned 0 bytes - stream may be full"]
+              ))
+              return
+            }
+
+            offset += bytesWritten
+            totalWritten += bytesWritten
+          }
+
+          self._bytesWritten += Int64(totalWritten)
+          continuation.resume(returning: Int64(totalWritten))
         }
       }
     }
@@ -122,7 +114,7 @@ class HybridNativeFileWriter: HybridNativeFileWriterSpec {
 
   func flush() throws -> Promise<Void> {
     // iOS OutputStream writes are immediate, no buffering to flush
-    return Promise.resolved(with: ())
+    return Promise.resolved()
   }
 
   func close() throws {

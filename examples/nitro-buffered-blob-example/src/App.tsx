@@ -90,13 +90,17 @@ function App(): React.JSX.Element {
       addLog('Closed writer');
 
       // Read file back
-      const reader: NativeFileReader = nitroModule.openRead(testPath, 1024);
+      const reader: NativeFileReader = nitroModule.openRead(testPath, 4096);
       addLog(`Opened reader, fileSize: ${reader.fileSize}`);
 
       const chunk = await reader.readNextChunk();
       if (chunk) {
-        const decoder = new TextDecoder();
-        const text = decoder.decode(chunk);
+        // Hermes does not support TextDecoder; decode UTF-8 manually
+        const bytes = new Uint8Array(chunk);
+        let text = '';
+        for (let i = 0; i < bytes.length; i++) {
+          text += String.fromCharCode(bytes[i]!);
+        }
         addLog(`Read data: "${text}"`);
         addLog(`Reader bytesRead: ${reader.bytesRead}, isEOF: ${reader.isEOF}`);
       }
@@ -130,6 +134,13 @@ function App(): React.JSX.Element {
       const srcPath = `${nitroModule.tempDir}/source.txt`;
       const copyPath = `${nitroModule.tempDir}/copied.txt`;
       const movePath = `${nitroModule.tempDir}/moved.txt`;
+
+      // Clean up any leftover files from previous runs
+      for (const p of [srcPath, copyPath, movePath]) {
+        if (await nitroModule.exists(p)) {
+          await nitroModule.unlink(p);
+        }
+      }
 
       // Create source file
       const writer = nitroModule.openWrite(srcPath, false);

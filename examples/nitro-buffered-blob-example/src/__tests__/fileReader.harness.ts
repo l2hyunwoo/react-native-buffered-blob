@@ -45,7 +45,7 @@ describe('NativeFileReader', () => {
     const filePath = `${testDir}/reader-test.txt`;
     await writeTestFile(filePath, 'hello');
 
-    const reader = module.openRead(filePath, 1024);
+    const reader = module.openRead(filePath, 4096);
     expect(reader).toBeDefined();
     expect(typeof reader.readNextChunk).toBe('function');
     expect(typeof reader.close).toBe('function');
@@ -58,7 +58,7 @@ describe('NativeFileReader', () => {
     const expectedSize = encoder.encode(content).byteLength;
     await writeTestFile(filePath, content);
 
-    const reader = module.openRead(filePath, 1024);
+    const reader = module.openRead(filePath, 4096);
     expect(reader.fileSize).toBe(expectedSize);
     reader.close();
   });
@@ -67,7 +67,7 @@ describe('NativeFileReader', () => {
     const filePath = `${testDir}/chunk-test.txt`;
     await writeTestFile(filePath, 'chunk data');
 
-    const reader = module.openRead(filePath, 1024);
+    const reader = module.openRead(filePath, 4096);
     const chunk = await reader.readNextChunk();
     expect(chunk).toBeDefined();
     expect(chunk instanceof ArrayBuffer).toBe(true);
@@ -112,7 +112,7 @@ describe('NativeFileReader', () => {
     const filePath = `${testDir}/close-test.txt`;
     await writeTestFile(filePath, 'close test');
 
-    const reader = module.openRead(filePath, 1024);
+    const reader = module.openRead(filePath, 4096);
     reader.close();
     // No exception means success
     expect(true).toBe(true);

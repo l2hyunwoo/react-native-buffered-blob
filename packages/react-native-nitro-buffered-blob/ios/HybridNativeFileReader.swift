@@ -27,7 +27,7 @@ class HybridNativeFileReader: HybridNativeFileReaderSpec {
     set { queue.sync { _isClosed = newValue } }
   }
 
-  override var memorySize: Int {
+  var memorySize: Int {
     return bufferSize + MemoryLayout<HybridNativeFileReader>.size
   }
 
@@ -67,7 +67,7 @@ class HybridNativeFileReader: HybridNativeFileReaderSpec {
     }
 
     if isEOF {
-      return Promise.resolved(with: nil)
+      return Promise.resolved(withResult: nil)
     }
 
     return Promise.async { [weak self] in
@@ -79,35 +79,29 @@ class HybridNativeFileReader: HybridNativeFileReaderSpec {
         )
       }
 
-      return try await withCheckedThrowingContinuation { continuation in
+      return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ArrayBuffer?, Error>) in
         self.queue.async {
-          do {
-            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: self.bufferSize)
-            defer { buffer.deallocate() }
+          let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: self.bufferSize)
+          defer { buffer.deallocate() }
 
-            let bytesRead = self.inputStream.read(buffer, maxLength: self.bufferSize)
+          let bytesRead = self.inputStream.read(buffer, maxLength: self.bufferSize)
 
-            if bytesRead < 0 {
-              self._isEOF = true
-              continuation.resume(returning: nil)
-              return
-            }
-
-            if bytesRead == 0 {
-              self._isEOF = true
-              continuation.resume(returning: nil)
-              return
-            }
-
-            self._bytesRead += Int64(bytesRead)
-
-            let data = Data(bytes: buffer, count: bytesRead)
-            let arrayBuffer = ArrayBuffer(data: data)
-
-            continuation.resume(returning: arrayBuffer)
-          } catch {
-            continuation.resume(throwing: error)
+          if bytesRead < 0 {
+            self._isEOF = true
+            continuation.resume(returning: nil)
+            return
           }
+
+          if bytesRead == 0 {
+            self._isEOF = true
+            continuation.resume(returning: nil)
+            return
+          }
+
+          self._bytesRead += Int64(bytesRead)
+
+          let arrayBuffer = ArrayBuffer.copy(of: buffer, size: bytesRead)
+          continuation.resume(returning: arrayBuffer)
         }
       }
     }

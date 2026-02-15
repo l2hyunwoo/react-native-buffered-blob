@@ -28,7 +28,7 @@ class HybridBufferedBlobModule: HybridBufferedBlobModuleSpec {
     }
   }
 
-  override var memorySize: Int {
+  var memorySize: Int {
     return MemoryLayout<HybridBufferedBlobModule>.size
   }
 
@@ -78,7 +78,7 @@ class HybridBufferedBlobModule: HybridBufferedBlobModuleSpec {
   }
 
   func exists(path: String) throws -> Promise<Bool> {
-    return Promise.resolved(with: fileManager.fileExists(atPath: path))
+    return Promise.resolved(withResult: fileManager.fileExists(atPath: path))
   }
 
   func stat(path: String) throws -> Promise<FileInfo> {
