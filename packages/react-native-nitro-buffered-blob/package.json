@@ -1,0 +1,92 @@
+{
+  "name": "react-native-nitro-buffered-blob",
+  "version": "0.1.0",
+  "description": "Nitro native module for buffered blob operations",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "cpp",
+    "nitrogen",
+    "nitro.json",
+    "*.podspec",
+    "react-native.config.js",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "nitrogen": "nitrogen",
+    "prepare": "bob build",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android",
+    "nitro"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l2hyunwoo/react-native-nitro-blob.git",
+    "directory": "packages/react-native-nitro-buffered-blob"
+  },
+  "author": "HyunWoo Lee <l2hyunwoo@gmail.com> (https://github.com/l2hyunwoo)",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*",
+    "react-native-nitro-modules": "^0.33.9"
+  },
+  "devDependencies": {
+    "nitrogen": "^0.33.9",
+    "react": "19.2.0",
+    "react-native": "0.83.0",
+    "react-native-builder-bob": "^0.40.18",
+    "react-native-nitro-modules": "^0.33.9",
+    "typescript": "^5.9.2"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "custom",
+        {
+          "script": "nitrogen",
+          "clean": "nitrogen/"
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  }
+}

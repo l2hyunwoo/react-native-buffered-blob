@@ -1,0 +1,12 @@
+{
+  "cxxNamespace": ["bufferedblob"],
+  "ios": { "iosModuleName": "NitroBufferedBlob" },
+  "android": { "androidNamespace": ["bufferedblob"], "androidCxxLibName": "bufferedblob" },
+  "autolinking": {
+    "BufferedBlobModule": {
+      "swift": "HybridBufferedBlobModule",
+      "kotlin": "HybridBufferedBlobModule"
+    }
+  },
+  "ignorePaths": ["node_modules"]
+}
