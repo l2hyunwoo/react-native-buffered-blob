@@ -244,13 +244,9 @@ public:
 
   void write(
       int handleId,
-      const uint8_t *data,
-      size_t size,
+      std::vector<uint8_t> data,
       std::function<void(int)> onSuccess,
       std::function<void(std::string)> onError) override {
-
-    // Copy the data before dispatching
-    std::vector<uint8_t> dataCopy(data, data + size);
 
     HandleRegistry *registry = [HandleRegistry shared];
     WriterHandleIOS *writer = (WriterHandleIOS *)[registry objectForId:handleId];
@@ -259,6 +255,9 @@ public:
       onError("[WRITER_CLOSED] Writer handle not found");
       return;
     }
+
+    // Move data into block-captured variable (single copy from JSI, no second copy)
+    __block auto ownedData = std::move(data);
 
     // Dispatch to the writer's serial queue to serialize all access to this handle
     dispatch_async(writer.queue, ^{
@@ -269,8 +268,8 @@ public:
         }
 
         NSInteger totalWritten = 0;
-        const uint8_t *ptr = dataCopy.data();
-        NSInteger remaining = static_cast<NSInteger>(dataCopy.size());
+        const uint8_t *ptr = ownedData.data();
+        NSInteger remaining = static_cast<NSInteger>(ownedData.size());
 
         while (remaining > 0) {
           NSInteger written = [writer.outputStream write:ptr maxLength:remaining];

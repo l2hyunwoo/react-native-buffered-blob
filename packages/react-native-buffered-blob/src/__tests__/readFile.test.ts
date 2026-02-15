@@ -60,7 +60,7 @@ describe('createReader', () => {
       expect.objectContaining({
         code: ErrorCode.INVALID_ARGUMENT,
         message: expect.stringContaining(
-          'bufferSize must be between 4096 and 67108864'
+          'bufferSize must be between 4096 and 4194304'
         ),
         path: '/test/file.txt',
       })
@@ -73,7 +73,7 @@ describe('createReader', () => {
       expect.objectContaining({
         code: ErrorCode.INVALID_ARGUMENT,
         message: expect.stringContaining(
-          'bufferSize must be between 4096 and 67108864'
+          'bufferSize must be between 4096 and 4194304'
         ),
       })
     );

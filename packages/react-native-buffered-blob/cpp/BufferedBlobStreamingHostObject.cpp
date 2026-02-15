@@ -144,7 +144,7 @@ jsi::Value BufferedBlobStreamingHostObject::get(
                   jsi::Runtime& rt2,
                   std::shared_ptr<react::Promise> promise) {
                 bridge->write(
-                    handleId, dataCopy.data(), dataCopy.size(),
+                    handleId, std::move(dataCopy),
                     [callInvoker, promise, alive](int bytesWritten) {
                       callInvoker->invokeAsync(
                           [promise, bytesWritten, alive]() {

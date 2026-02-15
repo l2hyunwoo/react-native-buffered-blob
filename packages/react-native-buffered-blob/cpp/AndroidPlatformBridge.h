@@ -4,6 +4,12 @@
 #include <fbjni/fbjni.h>
 #include <jsi/jsi.h>
 #include <ReactCommon/CallInvoker.h>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
+#include <functional>
+#include <atomic>
 
 namespace bufferedblob {
 
@@ -12,10 +18,12 @@ using namespace facebook;
 /**
  * Android implementation of PlatformBridge.
  * Calls into Kotlin/Java HandleRegistry via JNI to perform streaming operations.
+ * Uses a bounded thread pool for read/write/flush; downloads use dedicated threads.
  */
 class AndroidPlatformBridge : public PlatformBridge {
 public:
   AndroidPlatformBridge(JNIEnv* env);
+  ~AndroidPlatformBridge() override;
 
   void readNextChunk(
     int handleId,
@@ -26,8 +34,7 @@ public:
 
   void write(
     int handleId,
-    const uint8_t* data,
-    size_t size,
+    std::vector<uint8_t> data,
     std::function<void(int)> onSuccess,
     std::function<void(std::string)> onError
   ) override;
@@ -54,6 +61,17 @@ public:
 
 private:
   jni::global_ref<jclass> bridgeClass_;
+
+  // Thread pool for read/write/flush (not downloads)
+  static constexpr size_t kPoolThreads = 4;
+  std::vector<std::thread> poolWorkers_;
+  std::queue<std::function<void()>> taskQueue_;
+  std::mutex queueMutex_;
+  std::condition_variable queueCV_;
+  std::atomic<bool> shutdown_{false};
+
+  void initThreadPool();
+  void submitTask(std::function<void()> task);
 };
 
 } // namespace bufferedblob

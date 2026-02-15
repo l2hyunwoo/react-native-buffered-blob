@@ -30,8 +30,7 @@ struct PlatformBridge {
   // Writer operations
   virtual void write(
     int handleId,
-    const uint8_t* data,
-    size_t size,
+    std::vector<uint8_t> data,
     std::function<void(int)> onSuccess,
     std::function<void(std::string)> onError
   ) = 0;

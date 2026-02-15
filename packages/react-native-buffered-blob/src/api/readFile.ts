@@ -13,11 +13,11 @@ export function createReader(
     if (
       !Number.isFinite(bufferSize) ||
       bufferSize < 4096 ||
-      bufferSize > 67108864
+      bufferSize > 4194304
     ) {
       throw new BlobError(
         ErrorCode.INVALID_ARGUMENT,
-        `bufferSize must be between 4096 and 67108864, got ${bufferSize}`,
+        `bufferSize must be between 4096 and 4194304, got ${bufferSize}`,
         path
       );
     }

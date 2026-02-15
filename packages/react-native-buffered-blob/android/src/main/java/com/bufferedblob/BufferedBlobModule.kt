@@ -23,7 +23,7 @@ class BufferedBlobModule(reactContext: ReactApplicationContext)
   companion object {
     const val NAME = "BufferedBlob"
     private const val MIN_BUFFER_SIZE = 4096
-    private const val MAX_BUFFER_SIZE = 67108864
+    private const val MAX_BUFFER_SIZE = 4194304 // 4MB
     private const val HASH_CHUNK_SIZE = 8192
   }
 

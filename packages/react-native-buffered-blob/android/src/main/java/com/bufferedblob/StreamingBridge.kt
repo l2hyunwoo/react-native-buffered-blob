@@ -1,14 +1,10 @@
 package com.bufferedblob
 
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -97,7 +93,8 @@ object StreamingBridge {
 
   /**
    * Start a download synchronously (blocking the calling thread).
-   * Progress is not reported in this simple version.
+   * Updates handle.bytesDownloaded and handle.totalBytes during download
+   * for progress polling from the C++ layer.
    */
   @JvmStatic
   fun startDownload(handleId: Int) {
@@ -114,70 +111,47 @@ object StreamingBridge {
     }
     val request = requestBuilder.build()
 
-    val latch = CountDownLatch(1)
-    @Volatile var downloadError: String? = null
-
     val call = httpClient.newCall(request)
     handle.call = call
 
-    call.enqueue(object : Callback {
-      override fun onFailure(call: Call, e: IOException) {
-        if (handle.isCancelled) {
-          downloadError = "[DOWNLOAD_CANCELLED] Download was cancelled"
-        } else {
-          downloadError = "[DOWNLOAD_FAILED] ${e.message}"
-        }
-        latch.countDown()
+    val response = try {
+      call.execute()
+    } catch (e: IOException) {
+      if (handle.isCancelled) {
+        throw RuntimeException("[DOWNLOAD_CANCELLED] Download was cancelled")
       }
-
-      override fun onResponse(call: Call, response: Response) {
-        if (!response.isSuccessful) {
-          downloadError = "[DOWNLOAD_FAILED] HTTP ${response.code}"
-          response.close()
-          latch.countDown()
-          return
-        }
-
-        try {
-          val destFile = File(handle.destPath)
-          destFile.parentFile?.mkdirs()
-
-          response.body?.let { body ->
-            FileOutputStream(destFile).use { fos ->
-              val buffer = ByteArray(8192)
-              var bytesRead: Int
-              body.byteStream().use { inputStream ->
-                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                  if (handle.isCancelled) {
-                    downloadError = "[DOWNLOAD_CANCELLED] Download was cancelled"
-                    return@use
-                  }
-                  fos.write(buffer, 0, bytesRead)
-                }
-              }
-            }
-          } ?: run {
-            downloadError = "[DOWNLOAD_FAILED] Empty response body"
-          }
-        } catch (e: Exception) {
-          if (handle.isCancelled) {
-            downloadError = "[DOWNLOAD_CANCELLED] Download was cancelled"
-          } else {
-            downloadError = "[DOWNLOAD_FAILED] ${e.message}"
-          }
-        } finally {
-          response.close()
-          latch.countDown()
-        }
-      }
-    })
-
-    // Block until download completes
-    if (!latch.await(10, TimeUnit.MINUTES)) {
-      throw RuntimeException("[DOWNLOAD_FAILED] Download timed out")
+      throw RuntimeException("[DOWNLOAD_FAILED] ${e.message}")
     }
 
-    downloadError?.let { throw RuntimeException(it) }
+    response.use { resp ->
+      if (!resp.isSuccessful) {
+        throw RuntimeException("[DOWNLOAD_FAILED] HTTP ${resp.code}")
+      }
+
+      val body = resp.body
+        ?: throw RuntimeException("[DOWNLOAD_FAILED] Empty response body")
+
+      val contentLength = body.contentLength()
+      handle.totalBytes = contentLength
+
+      val destFile = File(handle.destPath)
+      destFile.parentFile?.mkdirs()
+
+      FileOutputStream(destFile).use { fos ->
+        val buffer = ByteArray(8192)
+        var bytesRead: Int
+
+        body.byteStream().use { inputStream ->
+          while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+            if (handle.isCancelled) {
+              throw RuntimeException("[DOWNLOAD_CANCELLED] Download was cancelled")
+            }
+            fos.write(buffer, 0, bytesRead)
+            handle.bytesDownloaded += bytesRead
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -215,6 +189,18 @@ object StreamingBridge {
   fun getWriterBytesWritten(handleId: Int): Long {
     val writer = HandleRegistry.get<WriterHandle>(handleId) ?: return 0L
     return writer.bytesWritten
+  }
+
+  // --- Download progress getters (polled from C++ via JNI) ---
+
+  @JvmStatic
+  fun getDownloadBytesDownloaded(handleId: Int): Long {
+    return HandleRegistry.get<DownloaderHandle>(handleId)?.bytesDownloaded ?: 0L
+  }
+
+  @JvmStatic
+  fun getDownloadTotalBytes(handleId: Int): Long {
+    return HandleRegistry.get<DownloaderHandle>(handleId)?.totalBytes ?: -1L
   }
 
   interface DownloadCallback {

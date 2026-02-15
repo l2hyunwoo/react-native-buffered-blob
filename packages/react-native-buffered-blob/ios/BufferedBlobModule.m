@@ -42,9 +42,14 @@
 #pragma mark - Handle Factories
 // ──────────────────────────────────────────────────────────────────────
 
+static const NSInteger kMinBufferSize = 4096;
+static const NSInteger kMaxBufferSize = 4194304; // 4MB
+
 - (NSNumber *)openRead:(NSString *)path bufferSize:(double)bufferSize {
   NSInteger size = (NSInteger)bufferSize;
-  if (size < 4096 || size > 67108864) {
+  if (size < kMinBufferSize || size > kMaxBufferSize) {
+    NSLog(@"[BufferedBlob] openRead: buffer size out of range (%ld). Must be %ld-%ld.",
+          (long)size, (long)kMinBufferSize, (long)kMaxBufferSize);
     return @(-1);
   }
 

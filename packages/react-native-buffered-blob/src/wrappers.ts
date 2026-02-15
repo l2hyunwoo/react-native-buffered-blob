@@ -67,6 +67,28 @@ export function wrapWriter(
     get bytesWritten() {
       return streaming.getWriterInfo(handleId).bytesWritten;
     },
+    /**
+     * Write data to the file.
+     *
+     * **Backpressure warning:** Each call queues data to the native write
+     * pipeline. You MUST await each write() call before issuing the next
+     * one. Failing to await writes can cause unbounded memory growth as
+     * ArrayBuffer copies accumulate in the native queue.
+     *
+     * @example
+     * ```ts
+     * // Correct - sequential writes with await
+     * for (const chunk of chunks) {
+     *   await writer.write(chunk);
+     * }
+     *
+     * // WRONG - parallel writes without backpressure
+     * chunks.forEach(chunk => writer.write(chunk)); // Do NOT do this
+     * ```
+     *
+     * @param data - The ArrayBuffer to write
+     * @returns Promise resolving to the number of bytes written
+     */
     write(data: ArrayBuffer) {
       if (closed) {
         throw new BlobError(

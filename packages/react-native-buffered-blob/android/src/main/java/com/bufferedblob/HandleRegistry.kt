@@ -12,9 +12,12 @@ object HandleRegistry {
   private val handles = ConcurrentHashMap<Int, Any>()
 
   fun register(obj: Any): Int {
-    val id = nextId.getAndIncrement()
-    handles[id] = obj
-    return id
+    while (true) {
+      val id = nextId.getAndUpdate { current ->
+        if (current >= Int.MAX_VALUE) 1 else current + 1
+      }
+      if (handles.putIfAbsent(id, obj) == null) return id
+    }
   }
 
   @Suppress("UNCHECKED_CAST")
@@ -67,7 +70,9 @@ data class DownloaderHandle(
   val destPath: String,
   val headers: Map<String, String>,
   @Volatile var isCancelled: Boolean = false,
-  @Volatile var call: okhttp3.Call? = null
+  @Volatile var call: okhttp3.Call? = null,
+  @Volatile var bytesDownloaded: Long = 0L,
+  @Volatile var totalBytes: Long = -1L
 ) : Closeable {
   fun cancel() {
     isCancelled = true
