@@ -24,7 +24,7 @@ export interface DownloadProgress {
   progress: number;
 }
 
-export interface BlobReader {
+export interface BlobReader extends Disposable {
   readonly handleId: number;
   readonly fileSize: number;
   readonly bytesRead: number;
@@ -33,7 +33,7 @@ export interface BlobReader {
   close(): void;
 }
 
-export interface BlobWriter {
+export interface BlobWriter extends Disposable {
   readonly handleId: number;
   readonly bytesWritten: number;
   write(data: ArrayBuffer): Promise<number>;

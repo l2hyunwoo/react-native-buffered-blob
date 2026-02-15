@@ -25,4 +25,4 @@ export { hashFile } from './api/hash';
 
 // API - Download
 export { download } from './api/download';
-export type { DownloadOptions } from './api/download';
+export type { DownloadOptions, DownloadHandle } from './api/download';

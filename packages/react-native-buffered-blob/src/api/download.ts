@@ -9,7 +9,12 @@ export interface DownloadOptions {
   onProgress?: (progress: DownloadProgress) => void;
 }
 
-export async function download(options: DownloadOptions): Promise<void> {
+export interface DownloadHandle {
+  promise: Promise<void>;
+  cancel: () => void;
+}
+
+export function download(options: DownloadOptions): DownloadHandle {
   const { url, destPath, headers = {}, onProgress } = options;
 
   try {
@@ -22,11 +27,19 @@ export async function download(options: DownloadOptions): Promise<void> {
         }
       : (_b: number, _t: number, _p: number) => {};
 
-    try {
-      await streaming.startDownload(handleId, progressCallback);
-    } finally {
-      NativeModule.closeHandle(handleId);
-    }
+    const promise = (async () => {
+      try {
+        await streaming.startDownload(handleId, progressCallback);
+      } finally {
+        NativeModule.closeHandle(handleId);
+      }
+    })();
+
+    const cancel = () => {
+      streaming.cancelDownload(handleId);
+    };
+
+    return { promise, cancel };
   } catch (e) {
     throw wrapError(e, destPath);
   }

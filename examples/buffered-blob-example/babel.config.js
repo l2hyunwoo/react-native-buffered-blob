@@ -1,8 +1,11 @@
 const path = require('path');
 const { getConfig } = require('react-native-builder-bob/babel-config');
-const pkg = require('../../package.json');
+const pkg = require('../../packages/react-native-buffered-blob/package.json');
 
-const root = path.resolve(__dirname, '../..');
+const root = path.resolve(
+  __dirname,
+  '../../packages/react-native-buffered-blob'
+);
 
 module.exports = getConfig(
   {

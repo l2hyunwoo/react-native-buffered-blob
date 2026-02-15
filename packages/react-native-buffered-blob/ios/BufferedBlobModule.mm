@@ -4,12 +4,11 @@
 #import <ReactCommon/CallInvoker.h>
 #import <jsi/jsi.h>
 #import "BufferedBlobStreamingBridge.h"
+#import "BufferedBlobModule.h"
+#import "HandleRegistry.h"
 
-// Forward declaration - Swift class
-@class BufferedBlobModule;
-
-@interface BufferedBlobModuleBridge : NSObject <RCTBridgeModule, RCTTurboModule>
-@property (nonatomic, strong) BufferedBlobModule *swiftModule;
+@interface BufferedBlobModuleBridge : NSObject <RCTBridgeModule>
+@property (nonatomic, strong) BufferedBlobModule *module;
 @end
 
 @implementation BufferedBlobModuleBridge {
@@ -26,46 +25,51 @@ RCT_EXPORT_MODULE(BufferedBlob)
 - (instancetype)init {
   self = [super init];
   if (self) {
-    _swiftModule = [[BufferedBlobModule alloc] init];
+    _module = [[BufferedBlobModule alloc] init];
     _runtime = nullptr;
   }
   return self;
 }
 
 - (NSDictionary *)constantsToExport {
-  return [_swiftModule constantsToExport];
+  return [_module constantsToExport];
 }
 
 // --- install(): Wire JSI HostObject ---
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(install) {
   @try {
-    // Try bridgeless first (RN 0.74+)
-    RCTBridge *bridge = [RCTBridge currentBridge];
+    RCTBridge *bridge = self.bridge;
     if (!bridge) {
-      // Fallback: try to get bridge from module registry
-      bridge = self.bridge;
+      bridge = [RCTBridge currentBridge];
+    }
+    if (!bridge) {
+      return @(NO);
     }
 
-    if (bridge) {
-      // Bridged mode: get runtime from bridge
-      facebook::jsi::Runtime *runtime = (facebook::jsi::Runtime *)bridge.runtime;
-      if (!runtime) {
-        return @(NO);
-      }
-
-      auto callInvoker = bridge.jsCallInvoker;
-      if (!callInvoker) {
-        return @(NO);
-      }
-
-      _runtime = runtime;
-      _callInvoker = callInvoker;
-
-      installBufferedBlobStreaming(*_runtime, _callInvoker);
-      return @(YES);
+    // runtime lives on RCTCxxBridge (the batchedBridge)
+    RCTCxxBridge *cxxBridge = (RCTCxxBridge *)(bridge.batchedBridge ?: bridge);
+    if (![cxxBridge isKindOfClass:[RCTCxxBridge class]]) {
+      return @(NO);
     }
 
-    return @(NO);
+    // Access runtime via RCTCxxBridge
+    void *runtimePtr = cxxBridge.runtime;
+    if (!runtimePtr) {
+      return @(NO);
+    }
+    facebook::jsi::Runtime *runtime = (facebook::jsi::Runtime *)runtimePtr;
+
+    // jsCallInvoker is a category method on RCTBridge from RCTTurboModule.h
+    auto callInvoker = [cxxBridge jsCallInvoker];
+    if (!callInvoker) {
+      return @(NO);
+    }
+
+    _runtime = runtime;
+    _callInvoker = callInvoker;
+
+    installBufferedBlobStreaming(*_runtime, _callInvoker);
+    return @(YES);
   } @catch (NSException *exception) {
     NSLog(@"[BufferedBlob] install() failed: %@", exception.reason);
     return @(NO);
@@ -74,53 +78,59 @@ RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(install) {
 
 // --- Handle Factories ---
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(openRead:(NSString *)path bufferSize:(double)bufferSize) {
-  return [_swiftModule openRead:path bufferSize:bufferSize];
+  return [_module openRead:path bufferSize:bufferSize];
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(openWrite:(NSString *)path append:(BOOL)append) {
-  return [_swiftModule openWrite:path append:append];
+  return [_module openWrite:path append:append];
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(createDownload:(NSString *)url destPath:(NSString *)destPath headers:(NSDictionary *)headers) {
-  return [_swiftModule createDownload:url destPath:destPath headers:headers];
+  return [_module createDownload:url destPath:destPath headers:headers];
 }
 
 RCT_EXPORT_BLOCKING_SYNCHRONOUS_METHOD(closeHandle:(double)handleId) {
-  [_swiftModule closeHandle:handleId];
+  [_module closeHandle:handleId];
   return nil;
 }
 
 // --- FS Operations ---
 RCT_EXPORT_METHOD(exists:(NSString *)path resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule exists:path resolve:resolve reject:reject];
+  [_module exists:path resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(stat:(NSString *)path resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule stat:path resolve:resolve reject:reject];
+  [_module stat:path resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(unlink:(NSString *)path resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule unlink:path resolve:resolve reject:reject];
+  [_module unlink:path resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(mkdir:(NSString *)path resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule mkdir:path resolve:resolve reject:reject];
+  [_module mkdir:path resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(ls:(NSString *)path resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule ls:path resolve:resolve reject:reject];
+  [_module ls:path resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(cp:(NSString *)srcPath destPath:(NSString *)destPath resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule cp:srcPath destPath:destPath resolve:resolve reject:reject];
+  [_module cp:srcPath destPath:destPath resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(mv:(NSString *)srcPath destPath:(NSString *)destPath resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule mv:srcPath destPath:destPath resolve:resolve reject:reject];
+  [_module mv:srcPath destPath:destPath resolve:resolve reject:reject];
 }
 
 RCT_EXPORT_METHOD(hashFile:(NSString *)path algorithm:(NSString *)algorithm resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject) {
-  [_swiftModule hashFile:path algorithm:algorithm resolve:resolve reject:reject];
+  [_module hashFile:path algorithm:algorithm resolve:resolve reject:reject];
+}
+
+- (void)invalidate {
+  [[HandleRegistry shared] clear];
+  _runtime = nullptr;
+  _callInvoker = nullptr;
 }
 
 @end

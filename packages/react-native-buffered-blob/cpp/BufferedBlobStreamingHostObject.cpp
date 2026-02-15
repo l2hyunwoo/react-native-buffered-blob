@@ -1,9 +1,18 @@
 #include "BufferedBlobStreamingHostObject.h"
 #include <ReactCommon/TurboModuleUtils.h>
+#include <cmath>
 #include <string>
 #include <utility>
 
 namespace bufferedblob {
+
+static int safeHandleId(const facebook::jsi::Value& val) {
+  double d = val.asNumber();
+  if (std::isnan(d) || std::isinf(d) || d < 0 || d > 2147483647.0) {
+    return -1;  // Invalid handle ID, will be not-found in registry
+  }
+  return static_cast<int>(d);
+}
 
 using namespace facebook;
 
@@ -28,7 +37,12 @@ BufferedBlobStreamingHostObject::BufferedBlobStreamingHostObject(
     std::shared_ptr<PlatformBridge> bridge)
     : runtime_(runtime),
       callInvoker_(std::move(callInvoker)),
-      bridge_(std::move(bridge)) {}
+      bridge_(std::move(bridge)),
+      alive_(std::make_shared<std::atomic<bool>>(true)) {}
+
+BufferedBlobStreamingHostObject::~BufferedBlobStreamingHostObject() {
+  *alive_ = false;
+}
 
 std::vector<jsi::PropNameID> BufferedBlobStreamingHostObject::getPropertyNames(
     jsi::Runtime& rt) {
@@ -55,21 +69,26 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 1,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 1) {
+            throw jsi::JSError(rt, "readNextChunk requires 1 argument");
+          }
+          int handleId = safeHandleId(args[0]);
           auto callInvoker = callInvoker_;
           auto bridge = bridge_;
+          auto alive = alive_;
 
           return react::createPromiseAsJSIValue(
               rt,
-              [handleId, callInvoker, bridge](
+              [handleId, callInvoker, bridge, alive](
                   jsi::Runtime& rt2,
                   std::shared_ptr<react::Promise> promise) {
                 bridge->readNextChunk(
                     handleId,
                     // onSuccess: data available
-                    [callInvoker, promise, rtPtr = &rt2](std::vector<uint8_t> data) {
+                    [callInvoker, promise, rtPtr = &rt2, alive](std::vector<uint8_t> data) {
                       callInvoker->invokeAsync(
-                          [promise, rtPtr, data = std::move(data)]() mutable {
+                          [promise, rtPtr, data = std::move(data), alive]() mutable {
+                            if (!*alive) return;
                             auto buffer = std::make_shared<OwnedMutableBuffer>(
                                 std::move(data));
                             auto arrayBuffer = jsi::ArrayBuffer(
@@ -78,15 +97,17 @@ jsi::Value BufferedBlobStreamingHostObject::get(
                           });
                     },
                     // onEOF: no more data
-                    [callInvoker, promise]() {
-                      callInvoker->invokeAsync([promise]() {
+                    [callInvoker, promise, alive]() {
+                      callInvoker->invokeAsync([promise, alive]() {
+                        if (!*alive) return;
                         promise->resolve(jsi::Value::null());
                       });
                     },
                     // onError
-                    [callInvoker, promise](std::string error) {
+                    [callInvoker, promise, alive](std::string error) {
                       callInvoker->invokeAsync(
-                          [promise, error = std::move(error)]() {
+                          [promise, error = std::move(error), alive]() {
+                            if (!*alive) return;
                             promise->reject(error);
                           });
                     });
@@ -100,7 +121,10 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 2,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 2) {
+            throw jsi::JSError(rt, "write requires 2 arguments");
+          }
+          int handleId = safeHandleId(args[0]);
           auto arrayBuffer =
               args[1].asObject(rt).getArrayBuffer(rt);
           auto dataPtr = arrayBuffer.data(rt);
@@ -111,24 +135,27 @@ jsi::Value BufferedBlobStreamingHostObject::get(
 
           auto callInvoker = callInvoker_;
           auto bridge = bridge_;
+          auto alive = alive_;
 
           return react::createPromiseAsJSIValue(
               rt,
-              [handleId, callInvoker, bridge,
+              [handleId, callInvoker, bridge, alive,
                dataCopy = std::move(dataCopy)](
                   jsi::Runtime& rt2,
                   std::shared_ptr<react::Promise> promise) {
                 bridge->write(
                     handleId, dataCopy.data(), dataCopy.size(),
-                    [callInvoker, promise](int bytesWritten) {
+                    [callInvoker, promise, alive](int bytesWritten) {
                       callInvoker->invokeAsync(
-                          [promise, bytesWritten]() {
+                          [promise, bytesWritten, alive]() {
+                            if (!*alive) return;
                             promise->resolve(jsi::Value(static_cast<double>(bytesWritten)));
                           });
                     },
-                    [callInvoker, promise](std::string error) {
+                    [callInvoker, promise, alive](std::string error) {
                       callInvoker->invokeAsync(
-                          [promise, error = std::move(error)]() {
+                          [promise, error = std::move(error), alive]() {
+                            if (!*alive) return;
                             promise->reject(error);
                           });
                     });
@@ -142,25 +169,31 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 1,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 1) {
+            throw jsi::JSError(rt, "flush requires 1 argument");
+          }
+          int handleId = safeHandleId(args[0]);
           auto callInvoker = callInvoker_;
           auto bridge = bridge_;
+          auto alive = alive_;
 
           return react::createPromiseAsJSIValue(
               rt,
-              [handleId, callInvoker, bridge](
+              [handleId, callInvoker, bridge, alive](
                   jsi::Runtime& rt2,
                   std::shared_ptr<react::Promise> promise) {
                 bridge->flush(
                     handleId,
-                    [callInvoker, promise]() {
-                      callInvoker->invokeAsync([promise]() {
+                    [callInvoker, promise, alive]() {
+                      callInvoker->invokeAsync([promise, alive]() {
+                        if (!*alive) return;
                         promise->resolve(jsi::Value::undefined());
                       });
                     },
-                    [callInvoker, promise](std::string error) {
+                    [callInvoker, promise, alive](std::string error) {
                       callInvoker->invokeAsync(
-                          [promise, error = std::move(error)]() {
+                          [promise, error = std::move(error), alive]() {
+                            if (!*alive) return;
                             promise->reject(error);
                           });
                     });
@@ -174,7 +207,10 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 1,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 1) {
+            throw jsi::JSError(rt, "close requires 1 argument");
+          }
+          int handleId = safeHandleId(args[0]);
           bridge_->close(handleId);
           return jsi::Value::undefined();
         });
@@ -186,29 +222,34 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 2,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 2) {
+            throw jsi::JSError(rt, "startDownload requires 2 arguments");
+          }
+          int handleId = safeHandleId(args[0]);
           auto progressFn =
               std::make_shared<jsi::Function>(args[1].asObject(rt).asFunction(rt));
           auto callInvoker = callInvoker_;
           auto bridge = bridge_;
+          auto alive = alive_;
           // Capture runtime pointer for use in progress callback.
           // Safe because invokeAsync runs on JS thread where runtime is valid.
           jsi::Runtime* rtPtr = &rt;
 
           return react::createPromiseAsJSIValue(
               rt,
-              [handleId, callInvoker, bridge, progressFn, rtPtr](
+              [handleId, callInvoker, bridge, progressFn, rtPtr, alive](
                   jsi::Runtime& rt2,
                   std::shared_ptr<react::Promise> promise) {
                 bridge->startDownload(
                     handleId,
                     // onProgress callback - invoke on JS thread
-                    [callInvoker, progressFn, rtPtr](
+                    [callInvoker, progressFn, rtPtr, alive](
                         double bytesDownloaded, double totalBytes,
                         double progress) {
                       callInvoker->invokeAsync(
                           [progressFn, rtPtr, bytesDownloaded, totalBytes,
-                           progress]() {
+                           progress, alive]() {
+                            if (!*alive) return;
                             progressFn->call(
                                 *rtPtr,
                                 jsi::Value(bytesDownloaded),
@@ -217,15 +258,17 @@ jsi::Value BufferedBlobStreamingHostObject::get(
                           });
                     },
                     // onSuccess
-                    [callInvoker, promise]() {
-                      callInvoker->invokeAsync([promise]() {
+                    [callInvoker, promise, alive]() {
+                      callInvoker->invokeAsync([promise, alive]() {
+                        if (!*alive) return;
                         promise->resolve(jsi::Value::undefined());
                       });
                     },
                     // onError
-                    [callInvoker, promise](std::string error) {
+                    [callInvoker, promise, alive](std::string error) {
                       callInvoker->invokeAsync(
-                          [promise, error = std::move(error)]() {
+                          [promise, error = std::move(error), alive]() {
+                            if (!*alive) return;
                             promise->reject(error);
                           });
                     });
@@ -239,7 +282,10 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 1,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 1) {
+            throw jsi::JSError(rt, "cancelDownload requires 1 argument");
+          }
+          int handleId = safeHandleId(args[0]);
           bridge_->cancelDownload(handleId);
           return jsi::Value::undefined();
         });
@@ -251,7 +297,10 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 1,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 1) {
+            throw jsi::JSError(rt, "getReaderInfo requires 1 argument");
+          }
+          int handleId = safeHandleId(args[0]);
           auto info = bridge_->getReaderInfo(handleId);
           auto obj = jsi::Object(rt);
           obj.setProperty(rt, "fileSize", info.fileSize);
@@ -267,7 +316,10 @@ jsi::Value BufferedBlobStreamingHostObject::get(
         rt, name, 1,
         [this](jsi::Runtime& rt, const jsi::Value&,
                const jsi::Value* args, size_t count) -> jsi::Value {
-          int handleId = static_cast<int>(args[0].asNumber());
+          if (count < 1) {
+            throw jsi::JSError(rt, "getWriterInfo requires 1 argument");
+          }
+          int handleId = safeHandleId(args[0]);
           auto info = bridge_->getWriterInfo(handleId);
           auto obj = jsi::Object(rt);
           obj.setProperty(rt, "bytesWritten", info.bytesWritten);

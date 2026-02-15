@@ -41,6 +41,12 @@ export function wrapReader(
         streaming.close(handleId);
       }
     },
+    [Symbol.dispose]() {
+      if (!closed) {
+        closed = true;
+        streaming.close(handleId);
+      }
+    },
   };
 }
 
@@ -80,6 +86,12 @@ export function wrapWriter(
       return streaming.flush(handleId);
     },
     close() {
+      if (!closed) {
+        closed = true;
+        streaming.close(handleId);
+      }
+    },
+    [Symbol.dispose]() {
       if (!closed) {
         closed = true;
         streaming.close(handleId);

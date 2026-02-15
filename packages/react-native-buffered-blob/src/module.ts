@@ -1,7 +1,12 @@
 import NativeModule from './NativeBufferedBlob';
 
 // Install JSI HostObject on first import
-NativeModule.install();
+const installed = NativeModule.install();
+if (!installed) {
+  throw new Error(
+    '[BufferedBlob] Failed to install JSI streaming bridge. Ensure the native module is linked.'
+  );
+}
 
 export interface StreamingProxy {
   readNextChunk(handleId: number): Promise<ArrayBuffer | null>;
@@ -26,7 +31,6 @@ export interface StreamingProxy {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __BufferedBlobStreaming: StreamingProxy | undefined;
 }
 

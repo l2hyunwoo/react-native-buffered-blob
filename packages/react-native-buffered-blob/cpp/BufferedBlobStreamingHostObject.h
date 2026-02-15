@@ -82,6 +82,8 @@ public:
     std::shared_ptr<PlatformBridge> bridge
   );
 
+  ~BufferedBlobStreamingHostObject() override;
+
   jsi::Value get(jsi::Runtime& rt, const jsi::PropNameID& name) override;
   std::vector<jsi::PropNameID> getPropertyNames(jsi::Runtime& rt) override;
 
@@ -98,6 +100,7 @@ private:
   jsi::Runtime& runtime_;
   std::shared_ptr<react::CallInvoker> callInvoker_;
   std::shared_ptr<PlatformBridge> bridge_;
+  std::shared_ptr<std::atomic<bool>> alive_;
 };
 
 /**
