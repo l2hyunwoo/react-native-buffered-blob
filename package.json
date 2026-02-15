@@ -1,44 +1,16 @@
 {
-  "name": "react-native-nitro-blob",
+  "name": "react-native-nitro-blob-monorepo",
   "version": "0.1.0",
-  "description": "No more OOM, just use nitro-blob",
-  "main": "./lib/module/index.js",
-  "types": "./lib/typescript/src/index.d.ts",
-  "exports": {
-    ".": {
-      "source": "./src/index.tsx",
-      "types": "./lib/typescript/src/index.d.ts",
-      "default": "./lib/module/index.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "src",
-    "lib",
-    "android",
-    "ios",
-    "cpp",
-    "nitrogen",
-    "nitro.json",
-    "*.podspec",
-    "react-native.config.js",
-    "!ios/build",
-    "!android/build",
-    "!android/gradle",
-    "!android/gradlew",
-    "!android/gradlew.bat",
-    "!android/local.properties",
-    "!**/__tests__",
-    "!**/__fixtures__",
-    "!**/__mocks__",
-    "!**/.*"
-  ],
+  "private": true,
+  "description": "No more OOM, just use buffered-blob",
   "scripts": {
     "example": "yarn workspace react-native-nitro-blob-example",
-    "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "prepare": "bob build",
-    "nitrogen": "nitrogen",
-    "typecheck": "tsc",
+    "native": "yarn workspace react-native-nitro-buffered-blob",
+    "wrapper": "yarn workspace react-native-buffered-blob",
+    "clean": "del-cli packages/react-native-nitro-buffered-blob/android/build packages/react-native-nitro-buffered-blob/lib packages/react-native-buffered-blob/lib example/android/build example/android/app/build example/ios/build",
+    "prepare": "yarn native prepare && yarn wrapper prepare",
+    "nitrogen": "yarn native nitrogen",
+    "typecheck": "yarn native typecheck && yarn wrapper typecheck",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
     "release": "release-it --only-version"
@@ -58,9 +30,6 @@
     "url": "https://github.com/l2hyunwoo/react-native-nitro-blob/issues"
   },
   "homepage": "https://github.com/l2hyunwoo/react-native-nitro-blob#readme",
-  "publishConfig": {
-    "registry": "https://registry.npmjs.org/"
-  },
   "devDependencies": {
     "@commitlint/config-conventional": "^19.8.1",
     "@eslint/compat": "^1.3.2",
@@ -78,50 +47,19 @@
     "eslint-plugin-prettier": "^5.5.4",
     "jest": "^29.7.0",
     "lefthook": "^2.0.3",
-    "nitrogen": "^0.33.9",
     "prettier": "^2.8.8",
     "react": "19.2.0",
     "react-native": "0.83.0",
-    "react-native-builder-bob": "^0.40.18",
     "react-native-nitro-modules": "^0.33.9",
     "release-it": "^19.0.4",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"
   },
-  "peerDependencies": {
-    "react": "*",
-    "react-native": "*",
-    "react-native-nitro-modules": "^0.33.9"
-  },
   "workspaces": [
+    "packages/*",
     "example"
   ],
-  "packageManager": "yarn@4.11.0",
-  "react-native-builder-bob": {
-    "source": "src",
-    "output": "lib",
-    "targets": [
-      [
-        "custom",
-        {
-          "script": "nitrogen",
-          "clean": "nitrogen/"
-        }
-      ],
-      [
-        "module",
-        {
-          "esm": true
-        }
-      ],
-      [
-        "typescript",
-        {
-          "project": "tsconfig.build.json"
-        }
-      ]
-    ]
-  },
+  "packageManager": "yarn@4.12.0",
   "prettier": {
     "quoteProps": "consistent",
     "singleQuote": true,
@@ -133,7 +71,7 @@
     "preset": "react-native",
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
-      "<rootDir>/lib/"
+      "<rootDir>/packages/*/lib/"
     ]
   },
   "commitlint": {
@@ -147,7 +85,7 @@
       "tagName": "v${version}"
     },
     "npm": {
-      "publish": true
+      "publish": false
     },
     "github": {
       "release": true
@@ -159,16 +97,5 @@
         }
       }
     }
-  },
-  "create-react-native-library": {
-    "type": "nitro-module",
-    "languages": "kotlin-swift",
-    "tools": [
-      "eslint",
-      "jest",
-      "lefthook",
-      "release-it"
-    ],
-    "version": "0.57.2"
   }
 }

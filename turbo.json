@@ -1,18 +1,24 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [".nvmrc", ".yarnrc.yml"],
+  "globalDependencies": [".yarnrc.yml"],
   "globalEnv": ["NODE_ENV"],
   "tasks": {
+    "prepare": {
+      "dependsOn": ["^prepare"],
+      "outputs": ["lib/**", "nitrogen/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^prepare"]
+    },
     "build:android": {
       "env": ["ANDROID_HOME", "ORG_GRADLE_PROJECT_newArchEnabled"],
       "inputs": [
         "package.json",
-        "android",
-        "!android/build",
-        "src/*.ts",
-        "src/*.tsx",
+        "packages/react-native-nitro-buffered-blob/android/**",
+        "!packages/react-native-nitro-buffered-blob/android/build",
+        "packages/react-native-nitro-buffered-blob/src/**",
         "example/package.json",
-        "example/android",
+        "example/android/**",
         "!example/android/.gradle",
         "!example/android/build",
         "!example/android/app/build"
@@ -28,12 +34,11 @@
       ],
       "inputs": [
         "package.json",
-        "*.podspec",
-        "ios",
-        "src/*.ts",
-        "src/*.tsx",
+        "packages/react-native-nitro-buffered-blob/*.podspec",
+        "packages/react-native-nitro-buffered-blob/ios/**",
+        "packages/react-native-nitro-buffered-blob/src/**",
         "example/package.json",
-        "example/ios",
+        "example/ios/**",
         "!example/ios/build",
         "!example/ios/Pods"
       ],

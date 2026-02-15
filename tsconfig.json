@@ -2,7 +2,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "react-native-nitro-blob": ["./src/index"]
+      "react-native-nitro-buffered-blob": ["./packages/react-native-nitro-buffered-blob/src/index"],
+      "react-native-buffered-blob": ["./packages/react-native-buffered-blob/src/index"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
@@ -26,5 +27,6 @@
     "strict": true,
     "target": "ESNext",
     "verbatimModuleSyntax": true
-  }
+  },
+  "exclude": ["node_modules", "**/lib", "**/nitrogen"]
 }
