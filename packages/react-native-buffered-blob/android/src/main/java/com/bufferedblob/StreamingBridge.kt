@@ -32,23 +32,25 @@ object StreamingBridge {
     val reader = HandleRegistry.get<ReaderHandle>(handleId)
       ?: throw RuntimeException("[READER_CLOSED] Reader handle not found: $handleId")
 
-    if (reader.isClosed) throw RuntimeException("[READER_CLOSED] Reader is closed")
-    if (reader.isEOF) return null
+    synchronized(reader) {
+      if (reader.isClosed) throw RuntimeException("[READER_CLOSED] Reader is closed")
+      if (reader.isEOF) return null
 
-    val buffer = ByteArray(reader.bufferSize)
-    val bytesRead = reader.stream.read(buffer)
+      val buffer = ByteArray(reader.bufferSize)
+      val bytesRead = reader.stream.read(buffer)
 
-    if (bytesRead == -1) {
-      reader.isEOF = true
-      return null
-    }
+      if (bytesRead == -1) {
+        reader.isEOF = true
+        return null
+      }
 
-    reader.bytesRead += bytesRead
+      reader.bytesRead += bytesRead
 
-    return if (bytesRead == buffer.size) {
-      buffer
-    } else {
-      buffer.copyOf(bytesRead)
+      return if (bytesRead == buffer.size) {
+        buffer
+      } else {
+        buffer.copyOf(bytesRead)
+      }
     }
   }
 
@@ -61,11 +63,13 @@ object StreamingBridge {
     val writer = HandleRegistry.get<WriterHandle>(handleId)
       ?: throw RuntimeException("[WRITER_CLOSED] Writer handle not found: $handleId")
 
-    if (writer.isClosed) throw RuntimeException("[WRITER_CLOSED] Writer is closed")
+    synchronized(writer) {
+      if (writer.isClosed) throw RuntimeException("[WRITER_CLOSED] Writer is closed")
 
-    writer.stream.write(data)
-    writer.bytesWritten += data.size
-    return data.size
+      writer.stream.write(data)
+      writer.bytesWritten += data.size
+      return data.size
+    }
   }
 
   /**
@@ -76,9 +80,11 @@ object StreamingBridge {
     val writer = HandleRegistry.get<WriterHandle>(handleId)
       ?: throw RuntimeException("[WRITER_CLOSED] Writer handle not found: $handleId")
 
-    if (writer.isClosed) throw RuntimeException("[WRITER_CLOSED] Writer is closed")
+    synchronized(writer) {
+      if (writer.isClosed) throw RuntimeException("[WRITER_CLOSED] Writer is closed")
 
-    writer.stream.flush()
+      writer.stream.flush()
+    }
   }
 
   /**
@@ -167,7 +173,9 @@ object StreamingBridge {
     })
 
     // Block until download completes
-    latch.await()
+    if (!latch.await(10, TimeUnit.MINUTES)) {
+      throw RuntimeException("[DOWNLOAD_FAILED] Download timed out")
+    }
 
     downloadError?.let { throw RuntimeException(it) }
   }

@@ -3,6 +3,11 @@ import CommonCrypto
 
 @objc(BufferedBlobModule)
 class BufferedBlobModule: NSObject {
+  /// Thread-safety: FileManager.default is documented as safe for basic file operations
+  /// (exists, stat, unlink, mkdir, ls, cp, mv) when accessed from concurrent queues.
+  /// See: https://developer.apple.com/documentation/foundation/filemanager#1651112
+  /// We dispatch all FS operations to global concurrent queues (DispatchQueue.global),
+  /// which is safe with the default FileManager instance.
   private let fileManager = FileManager.default
 
   @objc static func moduleName() -> String! {
@@ -95,7 +100,13 @@ class BufferedBlobModule: NSObject {
 
   // --- FS Operations ---
   @objc func exists(_ path: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    resolve(fileManager.fileExists(atPath: path))
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      guard let self = self else {
+        reject("ERR_FS", "Module deallocated", nil)
+        return
+      }
+      resolve(self.fileManager.fileExists(atPath: path))
+    }
   }
 
   @objc func stat(_ path: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {

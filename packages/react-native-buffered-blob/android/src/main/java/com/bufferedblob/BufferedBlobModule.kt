@@ -25,8 +25,9 @@ class BufferedBlobModule(reactContext: ReactApplicationContext)
     private const val MIN_BUFFER_SIZE = 4096
     private const val MAX_BUFFER_SIZE = 67108864
     private const val HASH_CHUNK_SIZE = 8192
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
   }
+
+  private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
   override fun getName(): String = NAME
 
@@ -57,7 +58,11 @@ class BufferedBlobModule(reactContext: ReactApplicationContext)
     val file = File(path)
     if (!file.exists()) throw RuntimeException("[FILE_NOT_FOUND] File does not exist: $path")
     if (!file.isFile) throw RuntimeException("[INVALID_ARGUMENT] Path is not a file: $path")
-    val stream = FileInputStream(file)
+    val stream = try {
+      FileInputStream(file)
+    } catch (e: java.io.FileNotFoundException) {
+      throw RuntimeException("[FILE_NOT_FOUND] File was removed during open: $path")
+    }
     val reader = ReaderHandle(stream, size, file.length())
     return HandleRegistry.register(reader).toDouble()
   }
@@ -217,7 +222,9 @@ class BufferedBlobModule(reactContext: ReactApplicationContext)
         if (!src.renameTo(dest)) {
           if (src.isFile) {
             src.copyTo(dest, overwrite = true)
-            src.delete()
+            if (!src.delete()) {
+              throw RuntimeException("[IO_ERROR] Move partially failed: copied but could not delete source: $srcPath")
+            }
           } else {
             throw RuntimeException("[IO_ERROR] Failed to move: $srcPath")
           }

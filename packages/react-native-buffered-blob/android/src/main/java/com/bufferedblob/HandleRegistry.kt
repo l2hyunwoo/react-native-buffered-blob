@@ -4,6 +4,7 @@ import java.io.Closeable
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 object HandleRegistry {
@@ -37,12 +38,12 @@ data class ReaderHandle(
   val bufferSize: Int,
   val fileSize: Long,
   @Volatile var bytesRead: Long = 0L,
-  @Volatile var isEOF: Boolean = false,
-  @Volatile var isClosed: Boolean = false
+  @Volatile var isEOF: Boolean = false
 ) : Closeable {
+  private val closed = AtomicBoolean(false)
+  val isClosed: Boolean get() = closed.get()
   override fun close() {
-    if (!isClosed) {
-      isClosed = true
+    if (closed.compareAndSet(false, true)) {
       try { stream.close() } catch (_: Exception) {}
     }
   }
@@ -50,12 +51,12 @@ data class ReaderHandle(
 
 data class WriterHandle(
   val stream: FileOutputStream,
-  @Volatile var bytesWritten: Long = 0L,
-  @Volatile var isClosed: Boolean = false
+  @Volatile var bytesWritten: Long = 0L
 ) : Closeable {
+  private val closed = AtomicBoolean(false)
+  val isClosed: Boolean get() = closed.get()
   override fun close() {
-    if (!isClosed) {
-      isClosed = true
+    if (closed.compareAndSet(false, true)) {
       try { stream.flush(); stream.close() } catch (_: Exception) {}
     }
   }

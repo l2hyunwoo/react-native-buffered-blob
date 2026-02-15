@@ -9,6 +9,149 @@
 @class DownloaderHandleIOS;
 @class HandleRegistry;
 
+@interface DownloadSessionDelegate : NSObject <NSURLSessionDataDelegate>
+@property (nonatomic, copy) NSString *destPath;
+@property (nonatomic, strong) NSOutputStream *outputStream;
+@property (nonatomic, assign) int64_t totalBytes;
+@property (nonatomic, assign) int64_t downloadedBytes;
+@property (nonatomic, assign) BOOL isFinished;
+@property (nonatomic, weak) DownloaderHandleIOS *handle;
+@property (nonatomic, copy) void (^onProgress)(double, double, double);
+@property (nonatomic, copy) void (^onSuccess)(void);
+@property (nonatomic, copy) void (^onError)(NSString *);
+@end
+
+@implementation DownloadSessionDelegate
+
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
+didReceiveResponse:(NSURLResponse *)response
+ completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
+  if (self.isFinished) return;
+
+  if (self.handle.isCancelled) {
+    self.isFinished = YES;
+    completionHandler(NSURLSessionResponseCancel);
+    if (self.onError) {
+      self.onError(@"[DOWNLOAD_CANCELLED] Download was cancelled");
+    }
+    return;
+  }
+
+  NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+  if (httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
+    self.isFinished = YES;
+    completionHandler(NSURLSessionResponseCancel);
+    if (self.onError) {
+      NSString *errorMsg = [NSString stringWithFormat:@"[DOWNLOAD_FAILED] HTTP %ld",
+                            (long)httpResponse.statusCode];
+      self.onError(errorMsg);
+    }
+    return;
+  }
+
+  self.totalBytes = response.expectedContentLength;
+  self.downloadedBytes = 0;
+
+  // Open output stream
+  self.outputStream = [NSOutputStream outputStreamToFileAtPath:self.destPath append:NO];
+  [self.outputStream open];
+
+  if (self.outputStream.streamStatus == NSStreamStatusError) {
+    self.isFinished = YES;
+    completionHandler(NSURLSessionResponseCancel);
+    if (self.onError) {
+      self.onError(@"[IO_ERROR] Failed to open output stream");
+    }
+    return;
+  }
+
+  completionHandler(NSURLSessionResponseAllow);
+}
+
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)dataTask
+    didReceiveData:(NSData *)data {
+  if (self.isFinished) return;
+
+  if (self.handle.isCancelled) {
+    self.isFinished = YES;
+    [session invalidateAndCancel];
+    if (self.onError) {
+      self.onError(@"[DOWNLOAD_CANCELLED] Download was cancelled");
+    }
+    return;
+  }
+
+  if (!self.outputStream || self.outputStream.streamStatus != NSStreamStatusOpen) {
+    self.isFinished = YES;
+    [session invalidateAndCancel];
+    if (self.onError) {
+      self.onError(@"[IO_ERROR] Output stream not open");
+    }
+    return;
+  }
+
+  const uint8_t *bytes = (const uint8_t *)data.bytes;
+  NSUInteger length = data.length;
+  NSUInteger totalWritten = 0;
+
+  while (totalWritten < length) {
+    NSInteger written = [self.outputStream write:(bytes + totalWritten)
+                                       maxLength:(length - totalWritten)];
+    if (written < 0) {
+      self.isFinished = YES;
+      [session invalidateAndCancel];
+      if (self.onError) {
+        self.onError(@"[IO_ERROR] Failed to write to file");
+      }
+      return;
+    }
+    totalWritten += written;
+  }
+
+  self.downloadedBytes += length;
+
+  if (self.onProgress && self.totalBytes > 0) {
+    double progress = (double)self.downloadedBytes / (double)self.totalBytes;
+    self.onProgress((double)self.downloadedBytes, (double)self.totalBytes, progress);
+  }
+}
+
+- (void)URLSession:(NSURLSession *)session
+              task:(NSURLSessionTask *)task
+didCompleteWithError:(NSError *)error {
+  if (self.outputStream) {
+    [self.outputStream close];
+    self.outputStream = nil;
+  }
+
+  if (self.isFinished) return;
+  self.isFinished = YES;
+
+  if (self.handle.isCancelled) {
+    if (self.onError) {
+      self.onError(@"[DOWNLOAD_CANCELLED] Download was cancelled");
+    }
+    return;
+  }
+
+  if (error) {
+    if (self.onError) {
+      NSString *errorMsg = [NSString stringWithFormat:@"[DOWNLOAD_FAILED] %@",
+                            error.localizedDescription];
+      self.onError(errorMsg);
+    }
+    return;
+  }
+
+  if (self.onSuccess) {
+    self.onSuccess();
+  }
+}
+
+@end
+
 namespace {
 
 using namespace bufferedblob;
@@ -27,16 +170,17 @@ public:
       std::function<void()> onEOF,
       std::function<void(std::string)> onError) override {
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    HandleRegistry *registry = [HandleRegistry shared];
+    ReaderHandleIOS *reader = [registry get:handleId];
+
+    if (!reader) {
+      onError("[READER_CLOSED] Reader handle not found");
+      return;
+    }
+
+    // Dispatch to the reader's serial queue to serialize all access to this handle
+    dispatch_async(reader.queue, ^{
       @autoreleasepool {
-        HandleRegistry *registry = [HandleRegistry shared];
-        ReaderHandleIOS *reader = [registry get:handleId];
-
-        if (!reader) {
-          onError("[READER_CLOSED] Reader handle not found");
-          return;
-        }
-
         if (reader.isClosed) {
           onError("[READER_CLOSED] Reader is closed");
           return;
@@ -88,16 +232,17 @@ public:
     // Copy the data before dispatching
     std::vector<uint8_t> dataCopy(data, data + size);
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    HandleRegistry *registry = [HandleRegistry shared];
+    WriterHandleIOS *writer = [registry get:handleId];
+
+    if (!writer) {
+      onError("[WRITER_CLOSED] Writer handle not found");
+      return;
+    }
+
+    // Dispatch to the writer's serial queue to serialize all access to this handle
+    dispatch_async(writer.queue, ^{
       @autoreleasepool {
-        HandleRegistry *registry = [HandleRegistry shared];
-        WriterHandleIOS *writer = [registry get:handleId];
-
-        if (!writer) {
-          onError("[WRITER_CLOSED] Writer handle not found");
-          return;
-        }
-
         if (writer.isClosed) {
           onError("[WRITER_CLOSED] Writer is closed");
           return;
@@ -133,16 +278,17 @@ public:
       std::function<void()> onSuccess,
       std::function<void(std::string)> onError) override {
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    HandleRegistry *registry = [HandleRegistry shared];
+    WriterHandleIOS *writer = [registry get:handleId];
+
+    if (!writer) {
+      onError("[WRITER_CLOSED] Writer handle not found");
+      return;
+    }
+
+    // Dispatch to the writer's serial queue to serialize all access to this handle
+    dispatch_async(writer.queue, ^{
       @autoreleasepool {
-        HandleRegistry *registry = [HandleRegistry shared];
-        WriterHandleIOS *writer = [registry get:handleId];
-
-        if (!writer) {
-          onError("[WRITER_CLOSED] Writer handle not found");
-          return;
-        }
-
         if (writer.isClosed) {
           onError("[WRITER_CLOSED] Writer is closed");
           return;
@@ -189,52 +335,34 @@ public:
       [request setValue:handle.headers[key] forHTTPHeaderField:key];
     }
 
-    NSURLSession *session = [NSURLSession sharedSession];
-    NSURLSessionDataTask *task = [session dataTaskWithRequest:request
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-      if (handle.isCancelled) {
-        onError("[DOWNLOAD_CANCELLED] Download was cancelled");
-        return;
-      }
-
-      if (error) {
-        onError(std::string("[DOWNLOAD_FAILED] ") +
-                [error.localizedDescription UTF8String]);
-        return;
-      }
-
-      NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-      if (httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
-        onError(std::string("[DOWNLOAD_FAILED] HTTP ") +
-                std::to_string(httpResponse.statusCode));
-        return;
-      }
-
-      if (!data) {
-        onError("[DOWNLOAD_FAILED] Empty response body");
-        return;
-      }
-
-      NSString *destPath = [NSString stringWithUTF8String:handle.destPath.UTF8String];
-      NSString *parentDir = [destPath stringByDeletingLastPathComponent];
-      [[NSFileManager defaultManager] createDirectoryAtPath:parentDir
+    NSString *destPath = [NSString stringWithUTF8String:handle.destPath.UTF8String];
+    NSString *parentDir = [destPath stringByDeletingLastPathComponent];
+    [[NSFileManager defaultManager] createDirectoryAtPath:parentDir
                                 withIntermediateDirectories:YES
                                                 attributes:nil
                                                      error:nil];
 
-      NSError *writeError = nil;
-      BOOL success = [data writeToFile:destPath options:NSDataWritingAtomic error:&writeError];
-
-      if (!success || writeError) {
-        onError(std::string("[IO_ERROR] Failed to write file: ") +
-                (writeError ? [writeError.localizedDescription UTF8String] : "unknown"));
-        return;
-      }
-
-      onProgress(static_cast<double>(data.length),
-                 static_cast<double>(data.length), 1.0);
+    DownloadSessionDelegate *delegate = [[DownloadSessionDelegate alloc] init];
+    delegate.destPath = destPath;
+    delegate.handle = handle;
+    delegate.onProgress = ^(double downloaded, double total, double progress) {
+      onProgress(downloaded, total, progress);
+    };
+    delegate.onSuccess = ^{
       onSuccess();
-    }];
+    };
+    delegate.onError = ^(NSString *errorMsg) {
+      onError(std::string([errorMsg UTF8String]));
+    };
+
+    NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config
+                                                          delegate:delegate
+                                                     delegateQueue:nil];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:request];
+
+    // Store session and task on the handle so cancelDownload can properly invalidate
+    [handle storeSession:session task:task];
 
     [task resume];
   }
@@ -243,6 +371,7 @@ public:
     HandleRegistry *registry = [HandleRegistry shared];
     DownloaderHandleIOS *handle = [registry get:handleId];
     if (handle) {
+      // cancel() now properly invalidates the NSURLSession and task
       [handle cancel];
     }
   }
