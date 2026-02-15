@@ -1,0 +1,82 @@
+{
+  "name": "react-native-buffered-blob",
+  "version": "0.1.0",
+  "description": "No more OOM, just use buffered-blob",
+  "main": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./lib/typescript/src/index.d.ts",
+      "default": "./lib/module/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "cpp",
+    "react-native-buffered-blob.podspec",
+    "react-native.config.js",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "prepare": "bob build",
+    "typecheck": "tsc --noEmit"
+  },
+  "codegenConfig": {
+    "name": "BufferedBlobSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.bufferedblob"
+    }
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android",
+    "blob",
+    "file"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l2hyunwoo/react-native-nitro-blob.git",
+    "directory": "packages/react-native-buffered-blob"
+  },
+  "author": "HyunWoo Lee <l2hyunwoo@gmail.com> (https://github.com/l2hyunwoo)",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "*",
+    "react-native": ">=0.76.0"
+  },
+  "devDependencies": {
+    "react": "19.2.0",
+    "react-native": "0.83.0",
+    "react-native-builder-bob": "^0.40.18",
+    "typescript": "^5.9.2"
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json"
+        }
+      ]
+    ]
+  }
+}
