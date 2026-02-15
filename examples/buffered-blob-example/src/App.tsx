@@ -1,11 +1,11 @@
-import { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
-  Text,
-  View,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {
   createReader,
@@ -25,80 +25,106 @@ import {
   BlobError,
 } from 'react-native-buffered-blob';
 
-type LogEntry = { text: string; success: boolean };
+function App(): React.JSX.Element {
+  const [log, setLog] = useState<string[]>([]);
 
-function useLogger() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const addLog = (message: string) => {
+    console.log(message);
+    setLog((prev) => [
+      ...prev,
+      `${new Date().toLocaleTimeString()}: ${message}`,
+    ]);
+  };
 
-  const log = useCallback((text: string, success = true) => {
-    setLogs((prev) => [...prev, { text, success }]);
-  }, []);
+  const clearLog = () => setLog([]);
 
-  const clear = useCallback(() => {
-    setLogs([]);
-  }, []);
+  // Helper to encode strings (Hermes TextEncoder fallback)
+  const encode = (str: string): Uint8Array => {
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(str);
+    }
+    const arr = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) {
+      arr[i] = str.charCodeAt(i);
+    }
+    return arr;
+  };
 
-  return { logs, log, clear };
-}
+  // Helper to decode Uint8Array to string (Hermes TextDecoder fallback)
+  const decode = (bytes: Uint8Array): string => {
+    let text = '';
+    for (let i = 0; i < bytes.length; i++) {
+      text += String.fromCharCode(bytes[i]!);
+    }
+    return text;
+  };
 
-export default function App() {
-  const { logs, log, clear } = useLogger();
-  const [running, setRunning] = useState(false);
-
-  const runFileTests = useCallback(async () => {
-    setRunning(true);
-    clear();
-
+  // Test file system operations
+  const testFileSystemOps = async () => {
     try {
-      // Show directory paths
-      log(`Document dir: ${Dirs.document}`);
-      log(`Cache dir: ${Dirs.cache}`);
-      log(`Temp dir: ${Dirs.temp}`);
+      addLog('=== Testing File System Operations ===');
+
+      // Get directories
+      addLog(`Document Dir: ${Dirs.document}`);
+      addLog(`Cache Dir: ${Dirs.cache}`);
+      addLog(`Temp Dir: ${Dirs.temp}`);
 
       const testDir = join(Dirs.temp, 'blob-test');
-      const testFile = join(testDir, 'hello.txt');
-      const copyFile = join(testDir, 'hello-copy.txt');
-      const movedFile = join(testDir, 'hello-moved.txt');
 
-      // mkdir
+      // Create directory
       await mkdir(testDir);
-      log('mkdir: created test directory');
+      addLog(`Created directory: ${testDir}`);
 
-      // Write file using createWriter
-      // Use TextEncoder if available (Hermes 0.12+), fallback for older runtimes
-      const encode = (str: string): Uint8Array => {
-        if (typeof TextEncoder !== 'undefined') {
-          return new TextEncoder().encode(str);
-        }
-        const arr = new Uint8Array(str.length);
-        for (let i = 0; i < str.length; i++) {
-          arr[i] = str.charCodeAt(i);
-        }
-        return arr;
-      };
-      const data = encode('Hello from Buffered Blob!');
+      // Check if directory exists
+      const dirExists = await exists(testDir);
+      addLog(`Directory exists: ${dirExists}`);
+
+      // Clean up
+      await unlink(testDir);
+      addLog('Cleaned up test directory');
+
+      addLog('✅ File system operations test passed');
+    } catch (error) {
+      if (error instanceof BlobError) {
+        addLog(`❌ BlobError [${error.code}]: ${error.message}`);
+      } else {
+        addLog(`❌ Error: ${error}`);
+      }
+    }
+  };
+
+  // Test file reader/writer
+  const testFileReadWrite = async () => {
+    try {
+      addLog('=== Testing File Read/Write ===');
+
+      const testDir = join(Dirs.temp, 'blob-test');
+      const testFile = join(testDir, 'readwrite-test.txt');
+      const streamFile = join(testDir, 'stream.txt');
+
+      await mkdir(testDir);
+
+      // Write file
+      const testData = 'Hello from Buffered Blob!';
       const w = createWriter(testFile);
+      const data = encode(testData);
       await w.write(data.buffer as ArrayBuffer);
       await w.flush();
       w.close();
-      log('createWriter: wrote test file');
+      addLog('Opened writer and wrote data');
+      addLog(`Writer bytesWritten: ${w.bytesWritten}`);
 
-      // exists
-      const fileExists = await exists(testFile);
-      log(`exists: ${fileExists}`, fileExists);
-
-      // stat
-      const info = await stat(testFile);
-      log(`stat: size=${info.size}, name=${info.name}`);
-
-      // Read file using createReader
+      // Read file back
       const r = createReader(testFile);
+      addLog(`Opened reader, fileSize: ${r.fileSize}`);
+
       const readChunks: ArrayBuffer[] = [];
       while (!r.isEOF) {
         const chunk = await r.readNextChunk();
         if (chunk) readChunks.push(chunk);
       }
       r.close();
+
       const merged = new Uint8Array(
         readChunks.reduce((sum, c) => sum + c.byteLength, 0)
       );
@@ -107,18 +133,11 @@ export default function App() {
         merged.set(new Uint8Array(c), offset);
         offset += c.byteLength;
       }
-      // Hermes does not support TextDecoder; decode UTF-8 manually
-      let content = '';
-      for (let i = 0; i < merged.length; i++) {
-        content += String.fromCharCode(merged[i]!);
-      }
-      log(
-        `createReader: "${content}"`,
-        content === 'Hello from Buffered Blob!'
-      );
+      const content = decode(merged);
+      addLog(`Read data: "${content}"`);
+      addLog(`Reader bytesRead: ${r.bytesRead}, isEOF: ${r.isEOF}`);
 
       // Streaming write
-      const streamFile = join(testDir, 'stream.txt');
       const writer = createWriter(streamFile);
       for (let i = 0; i < 3; i++) {
         const chunk = encode(`Chunk ${i}\n`);
@@ -126,7 +145,7 @@ export default function App() {
       }
       await writer.flush();
       writer.close();
-      log(`createWriter: wrote 3 chunks, bytesWritten=${writer.bytesWritten}`);
+      addLog(`Streaming write: 3 chunks, bytesWritten=${writer.bytesWritten}`);
 
       // Streaming read
       const reader = createReader(streamFile);
@@ -136,132 +155,192 @@ export default function App() {
         if (chunk) chunks++;
       }
       reader.close();
-      log(`createReader: read ${chunks} chunk(s), fileSize=${reader.fileSize}`);
+      addLog(`Streaming read: ${chunks} chunk(s), fileSize=${reader.fileSize}`);
 
-      // cp
-      await cp(testFile, copyFile);
-      const copyExists = await exists(copyFile);
-      log(`cp: copied file, exists=${copyExists}`, copyExists);
+      // Stat file
+      const info = await stat(testFile);
+      addLog(`File stat - size: ${info.size}, type: ${info.type}`);
 
-      // mv
-      await mv(copyFile, movedFile);
-      const movedExists = await exists(movedFile);
-      const origGone = !(await exists(copyFile));
-      log(
-        `mv: moved file, new exists=${movedExists}, old gone=${origGone}`,
-        movedExists && origGone
-      );
-
-      // ls
-      const entries = await ls(testDir);
-      log(
-        `ls: ${entries.length} entries: ${entries
-          .map((e) => e.name)
-          .join(', ')}`
-      );
-
-      // hashFile
+      // Hash file
       const hash = await hashFile(testFile, HashAlgorithm.SHA256);
-      log(`hashFile(SHA256): ${hash.slice(0, 16)}...`);
+      addLog(`File hash (SHA256): ${hash}`);
 
       const md5 = await hashFile(testFile, HashAlgorithm.MD5);
-      log(`hashFile(MD5): ${md5}`);
+      addLog(`File hash (MD5): ${md5}`);
 
-      // Cleanup
+      // Clean up
       await unlink(testFile);
-      await unlink(movedFile);
       await unlink(streamFile);
       await unlink(testDir);
-      log('unlink: cleaned up test files');
+      addLog('Cleaned up test files');
 
-      log('--- All file tests passed! ---');
-    } catch (e) {
-      if (e instanceof BlobError) {
-        log(`BlobError [${e.code}]: ${e.message} (path: ${e.path})`, false);
+      addLog('✅ File read/write test passed');
+    } catch (error) {
+      if (error instanceof BlobError) {
+        addLog(`❌ BlobError [${error.code}]: ${error.message}`);
       } else {
-        log(`Error: ${e instanceof Error ? e.message : String(e)}`, false);
+        addLog(`❌ Error: ${error}`);
       }
-    } finally {
-      setRunning(false);
     }
-  }, [log, clear]);
+  };
 
-  const runDownloadTest = useCallback(async () => {
-    setRunning(true);
-    clear();
-
+  // Test file copy and move
+  const testCopyMove = async () => {
     try {
-      const destPath = join(Dirs.temp, 'download-test.json');
+      addLog('=== Testing File Copy/Move ===');
 
-      log('Starting download...');
+      const testDir = join(Dirs.temp, 'blob-test');
+      const srcPath = join(testDir, 'source.txt');
+      const copyPath = join(testDir, 'copied.txt');
+      const movePath = join(testDir, 'moved.txt');
+
+      await mkdir(testDir);
+
+      // Clean up any leftover files from previous runs
+      for (const p of [srcPath, copyPath, movePath]) {
+        if (await exists(p)) {
+          await unlink(p);
+        }
+      }
+
+      // Create source file
+      const w = createWriter(srcPath);
+      await w.write(encode('Copy/Move test').buffer as ArrayBuffer);
+      await w.flush();
+      w.close();
+      addLog('Created source file');
+
+      // Copy file
+      await cp(srcPath, copyPath);
+      const copyExists = await exists(copyPath);
+      addLog(`File copied: ${copyExists}`);
+
+      // Move file
+      await mv(copyPath, movePath);
+      const moveExists = await exists(movePath);
+      const copyStillExists = await exists(copyPath);
+      addLog(`File moved: ${moveExists}, copy removed: ${!copyStillExists}`);
+
+      // List directory
+      const files = await ls(testDir);
+      addLog(`Found ${files.length} files/dirs in test directory`);
+
+      // Clean up
+      await unlink(srcPath);
+      await unlink(movePath);
+      await unlink(testDir);
+      addLog('Cleaned up test files');
+
+      addLog('✅ Copy/move test passed');
+    } catch (error) {
+      if (error instanceof BlobError) {
+        addLog(`❌ BlobError [${error.code}]: ${error.message}`);
+      } else {
+        addLog(`❌ Error: ${error}`);
+      }
+    }
+  };
+
+  // Test downloader
+  const testDownloader = async () => {
+    try {
+      addLog('=== Testing Downloader ===');
+
+      const destPath = join(Dirs.temp, 'download-test.bin');
+
       const dl = download({
         url: 'https://httpbin.org/bytes/1024',
         destPath,
         onProgress: (progress) => {
-          log(
-            `Progress: ${progress.bytesDownloaded}/${
-              progress.totalBytes
-            } (${Math.round(progress.progress * 100)}%)`
+          addLog(
+            `Download progress: ${progress.bytesDownloaded}/${progress.totalBytes} ` +
+              `(${Math.round(progress.progress * 100)}%)`
           );
         },
       });
-      await dl.promise;
 
+      addLog('Started download');
+      await dl.promise;
+      addLog('Download complete');
+
+      // Verify file exists
       const fileExists = await exists(destPath);
-      log(`Download complete, file exists: ${fileExists}`, fileExists);
+      addLog(`Downloaded file exists: ${fileExists}`);
 
       if (fileExists) {
         const info = await stat(destPath);
-        log(`Downloaded file size: ${info.size} bytes`);
+        addLog(`Downloaded file size: ${info.size} bytes`);
         await unlink(destPath);
-        log('Cleaned up downloaded file');
+        addLog('Cleaned up downloaded file');
       }
 
-      log('--- Download test passed! ---');
-    } catch (e) {
-      if (e instanceof BlobError) {
-        if (e.code === 'DOWNLOAD_CANCELLED') {
-          log('Download was cancelled by user');
+      addLog('✅ Downloader test passed');
+    } catch (error) {
+      if (error instanceof BlobError) {
+        if (error.code === 'DOWNLOAD_CANCELLED') {
+          addLog('Download was cancelled');
         } else {
-          log(`BlobError [${e.code}]: ${e.message}`, false);
+          addLog(`❌ BlobError [${error.code}]: ${error.message}`);
         }
       } else {
-        log(`Error: ${e instanceof Error ? e.message : String(e)}`, false);
+        addLog(`❌ Error: ${error}`);
       }
-    } finally {
-      setRunning(false);
     }
-  }, [log, clear]);
+  };
+
+  // Run all tests
+  const runAllTests = async () => {
+    clearLog();
+    await testFileSystemOps();
+    await testFileReadWrite();
+    await testCopyMove();
+    await testDownloader();
+    addLog('=== All tests completed ===');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Buffered Blob Example</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Buffered Blob Example</Text>
+        <Text style={styles.subtitle}>Wrapper API Tests</Text>
+      </View>
 
-      <View style={styles.buttons}>
-        <TouchableOpacity
-          style={[styles.button, running && styles.buttonDisabled]}
-          onPress={runFileTests}
-          disabled={running}
-        >
-          <Text style={styles.buttonText}>Run File Tests</Text>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={styles.button} onPress={testFileSystemOps}>
+          <Text style={styles.buttonText}>Test File System Ops</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.button} onPress={testFileReadWrite}>
+          <Text style={styles.buttonText}>Test File Read/Write</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.button} onPress={testCopyMove}>
+          <Text style={styles.buttonText}>Test Copy/Move</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.button} onPress={testDownloader}>
+          <Text style={styles.buttonText}>Test Downloader</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, running && styles.buttonDisabled]}
-          onPress={runDownloadTest}
-          disabled={running}
+          style={[styles.button, styles.primaryButton]}
+          onPress={runAllTests}
         >
-          <Text style={styles.buttonText}>Test Download</Text>
+          <Text style={styles.buttonText}>Run All Tests</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, styles.clearButton]}
+          onPress={clearLog}
+        >
+          <Text style={styles.buttonText}>Clear Log</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.logContainer}>
-        {logs.map((entry, i) => (
-          <Text
-            key={i}
-            style={[styles.logText, !entry.success && styles.logError]}
-          >
-            {entry.text}
+        {log.map((entry, index) => (
+          <Text key={index} style={styles.logEntry}>
+            {entry}
           </Text>
         ))}
       </ScrollView>
@@ -274,48 +353,55 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  header: {
+    padding: 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    textAlign: 'center',
-    paddingVertical: 16,
     color: '#333',
   },
-  buttons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  buttonContainer: {
+    padding: 16,
     gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
   },
   button: {
     backgroundColor: '#007AFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    padding: 12,
     borderRadius: 8,
+    alignItems: 'center',
   },
-  buttonDisabled: {
-    opacity: 0.5,
+  primaryButton: {
+    backgroundColor: '#34C759',
+    marginTop: 8,
+  },
+  clearButton: {
+    backgroundColor: '#FF3B30',
   },
   buttonText: {
     color: '#fff',
+    fontSize: 16,
     fontWeight: '600',
-    fontSize: 14,
   },
   logContainer: {
     flex: 1,
     backgroundColor: '#1e1e1e',
-    margin: 16,
-    borderRadius: 8,
     padding: 12,
   },
-  logText: {
-    color: '#4EC9B0',
-    fontFamily: 'monospace',
+  logEntry: {
+    color: '#d4d4d4',
     fontSize: 12,
-    lineHeight: 18,
-  },
-  logError: {
-    color: '#F44747',
+    fontFamily: 'monospace',
+    marginBottom: 4,
   },
 });
+
+export default App;

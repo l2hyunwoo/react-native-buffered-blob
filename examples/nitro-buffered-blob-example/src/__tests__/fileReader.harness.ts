@@ -117,4 +117,21 @@ describe('NativeFileReader', () => {
     // No exception means success
     expect(true).toBe(true);
   });
+
+  test('close prevents further reads', async () => {
+    const filePath = `${testDir}/close-reader.txt`;
+    await writeTestFile(filePath, 'test content for close');
+
+    const reader = module.openRead(filePath, 4096);
+    reader.close();
+
+    try {
+      await reader.readNextChunk();
+      expect(true).toBe(false); // Should not reach here
+    } catch (e) {
+      expect(e instanceof Error).toBe(true);
+      expect(typeof (e as Error).message).toBe('string');
+      expect((e as Error).message.length).toBeGreaterThan(0);
+    }
+  });
 });

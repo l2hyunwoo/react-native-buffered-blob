@@ -117,4 +117,40 @@ describe('NativeFileWriter', () => {
 
     expect(readBack).toBe(content);
   });
+
+  test('openWrite with append mode adds to existing file', async () => {
+    const filePath = `${testDir}/append.txt`;
+
+    // Write initial content
+    const writer1 = module.openWrite(filePath, false);
+    await writer1.write(encoder.encode('first').buffer as ArrayBuffer);
+    await writer1.flush();
+    writer1.close();
+
+    // Append more content
+    const writer2 = module.openWrite(filePath, true);
+    await writer2.write(encoder.encode('second').buffer as ArrayBuffer);
+    await writer2.flush();
+    writer2.close();
+
+    // Read back
+    const reader = module.openRead(filePath, 4096);
+    const chunks: ArrayBuffer[] = [];
+    while (!reader.isEOF) {
+      const chunk = await reader.readNextChunk();
+      if (chunk) chunks.push(chunk);
+    }
+    reader.close();
+
+    const totalLength = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+    const merged = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(new Uint8Array(chunk), offset);
+      offset += chunk.byteLength;
+    }
+    const result = decoder.decode(merged);
+
+    expect(result).toBe('firstsecond');
+  });
 });

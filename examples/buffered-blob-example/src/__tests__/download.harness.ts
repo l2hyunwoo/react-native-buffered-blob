@@ -44,7 +44,8 @@ describe('Download', () => {
   test('download creates file at destination', async () => {
     const destPath = join(testDir, 'downloaded.bin');
 
-    await download({ url: TEST_URL, destPath });
+    const handle = download({ url: TEST_URL, destPath });
+    await handle.promise;
 
     const fileExists = await exists(destPath);
     expect(fileExists).toBe(true);
@@ -53,7 +54,8 @@ describe('Download', () => {
   test('downloaded file has correct size', async () => {
     const destPath = join(testDir, 'sized.bin');
 
-    await download({ url: TEST_URL, destPath });
+    const handle = download({ url: TEST_URL, destPath });
+    await handle.promise;
 
     const info = await stat(destPath);
     expect(info.size).toBe(1024);
@@ -63,13 +65,14 @@ describe('Download', () => {
     const destPath = join(testDir, 'progress.txt');
     const progressEvents: DownloadProgress[] = [];
 
-    await download({
+    const handle = download({
       url: TEST_TEXT_URL,
       destPath,
       onProgress: (progress) => {
         progressEvents.push({ ...progress });
       },
     });
+    await handle.promise;
 
     const fileExists = await exists(destPath);
     expect(fileExists).toBe(true);
@@ -87,11 +90,12 @@ describe('Download', () => {
   test('download with custom headers', async () => {
     const destPath = join(testDir, 'headers.bin');
 
-    await download({
+    const handle = download({
       url: TEST_URL,
       destPath,
       headers: { Accept: 'application/octet-stream' },
     });
+    await handle.promise;
 
     const fileExists = await exists(destPath);
     expect(fileExists).toBe(true);

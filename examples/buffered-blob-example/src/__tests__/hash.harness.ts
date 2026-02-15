@@ -58,6 +58,9 @@ describe('Hash', () => {
     expect(hash1).toBe(
       'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9'
     );
+    // Validate hex string format
+    expect(hash1.length).toBe(64); // SHA256 hex is 64 chars
+    expect(hash1).toMatch(/^[a-f0-9]+$/);
   });
 
   test('hashFile with MD5 produces consistent hash', async () => {
@@ -70,6 +73,9 @@ describe('Hash', () => {
     expect(hash1).toBe(hash2);
     // Known MD5 of "hello world"
     expect(hash1).toBe('5eb63bbbe01eeed093cb22bb8f5acdc3');
+    // Validate hex string format
+    expect(hash1.length).toBe(32); // MD5 hex is 32 chars
+    expect(hash1).toMatch(/^[a-f0-9]+$/);
   });
 
   test('same content produces same hash', async () => {
