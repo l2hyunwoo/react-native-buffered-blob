@@ -1,74 +1,64 @@
-<!-- Generated: 2026-02-15 -->
+<!-- Parent: ../../AGENTS.md -->
+<!-- Generated: 2026-02-15 | Updated: 2026-02-16 -->
 
 # react-native-buffered-blob
 
-Turbo Module + JSI HostObject library for OOM-safe file I/O in React Native. Handles streaming read/write, file operations, hashing, and downloads with progress tracking.
-
 ## Purpose
+Turbo Module + JSI HostObject library for OOM-safe file I/O in React Native. Handles streaming read/write, file operations, hashing, and downloads with progress tracking. No dependency on Nitro — uses React Native's built-in Turbo Module codegen and a custom C++ JSI HostObject for streaming.
 
-Provide a high-performance, memory-safe file streaming API across iOS and Android without Out-Of-Memory errors. Uses:
-- **Turbo Module** (TypeScript codegen) for Turbo Module calls and handle factories
-- **JSI HostObject** (C++) for streaming operations with zero-copy ArrayBuffer support
-- **Platform Bridges** (JNI/ObjC++) for native streaming and download logic
+## Architecture
+Two-layer native bridge:
+1. **Turbo Module** (`NativeBufferedBlob.ts` codegen) — Exposes handle factories (`openRead`, `openWrite`, `createDownload`), file system operations, and constants. Returns numeric handle IDs.
+2. **JSI HostObject** (`BufferedBlobStreamingHostObject` in C++) — Installed on `global.__BufferedBlobStreaming` during `install()`. Operates on handle IDs for streaming: `readNextChunk`, `write`, `flush`, `close`, `startDownload`, `cancelDownload`.
+
+The C++ layer defines a `PlatformBridge` interface implemented by each platform (iOS via ObjC++, Android via JNI->Kotlin).
 
 ## Key Files
 
 | File | Description |
 |------|-------------|
-| `package.json` | Monorepo package config; codegenConfig for BufferedBlobSpec, react-native-builder-bob targets |
+| `package.json` | Package config with codegenConfig for BufferedBlobSpec, builder-bob targets |
 | `tsconfig.json` / `tsconfig.build.json` | Strict TypeScript configuration |
-| `react-native.config.js` | RN linking: points to `cpp/CMakeLists.txt` |
+| `react-native.config.js` | RN autolinking config; points to `cpp/CMakeLists.txt` for Android |
 | `react-native-buffered-blob.podspec` | CocoaPods spec for iOS linking |
 
 ## Subdirectories
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/` | TypeScript Turbo Module spec and API layer |
-| `cpp/` | JSI HostObject, platform bridge abstraction, Android JNI bindings |
-| `ios/` | iOS platform bridge (ObjC++ + Swift), handle registry, streaming |
-| `android/` | Android platform bridge (Kotlin + JNI), handle registry, streaming |
+| `src/` | TypeScript API layer, Turbo Module spec, types, wrappers (see `src/AGENTS.md`) |
+| `cpp/` | C++ JSI HostObject, PlatformBridge abstraction, Android JNI (see `cpp/AGENTS.md`) |
+| `ios/` | iOS native implementation in ObjC/ObjC++ (see `ios/AGENTS.md`) |
+| `android/` | Android native implementation in Kotlin (see `android/AGENTS.md`) |
+| `lib/` | Generated build output (do not edit) |
 
 ## For AI Agents
 
 ### Working In This Directory
-
-1. **Package structure**: Monorepo package published to npm. Use `yarn prepare` or `bob build` to generate lib/ outputs.
-2. **Turbo Module spec**: Changes to `src/NativeBufferedBlob.ts` trigger codegen. Regenerate with `yarn prepare`.
-3. **JSI + Platform Bridges**: C++ code in `cpp/` is platform-agnostic; each platform implements `PlatformBridge` interface.
-4. **Handle pattern**: Turbo Module returns numeric handles; JSI HostObject operates on handles by ID stored in platform-specific registries.
-5. **Type safety**: Use TypeScript strict mode (`tsconfig.json`). Use `wrapReader()` / `wrapWriter()` to proxy JSI HostObject properties.
+1. **Build**: `yarn wrapper prepare` or `bob build` to generate `lib/` outputs
+2. **Turbo Module spec**: Changes to `src/NativeBufferedBlob.ts` trigger codegen on build
+3. **Handle pattern**: Turbo Module returns numeric handle IDs; JSI HostObject operates on handles via platform registries
+4. **C++ PlatformBridge**: Each platform implements the `PlatformBridge` interface; C++ code in `cpp/` is shared
+5. **Type safety**: Use `wrapReader()` / `wrapWriter()` to proxy JSI HostObject properties (never spread HostObjects)
 
 ### Testing Requirements
-
-- **Type checking**: `yarn typecheck` (runs `tsc --noEmit`)
-- **Unit tests**: Verify API layer functions (fileOps, hash, download) in isolation
-- **Integration tests**: End-to-end streaming tests on iOS/Android (requires native build)
-- **Streaming tests**: Verify zero-copy ArrayBuffer, handle cleanup, error propagation
+- **Type checking**: `yarn wrapper typecheck` (runs `tsc --noEmit`)
+- **Unit tests**: `yarn wrapper test` — tests in `src/__tests__/` cover API wrappers, paths, errors
+- **Mocks**: `src/__mocks__/NativeBufferedBlob.ts` provides a mock for the native module
+- **Integration**: Build and run `examples/buffered-blob-example` on iOS/Android
 
 ### Common Patterns
-
-1. **Handle-based streaming**: `openRead(path) -> handleId -> getStreamingProxy() -> readNextChunk(handleId)`. Always `close(handleId)` when done.
-2. **Promises for async**: File operations return Promises; streaming is Promise-based via JSI callbacks.
-3. **Error handling**: Use `wrapError()` to normalize platform-specific exceptions. Error codes in `errors.ts`.
-4. **Progress callbacks**: Download progress via callback; streaming info via `getReaderInfo()` / `getWriterInfo()`.
+1. **Handle lifecycle**: `openRead(path) -> handleId -> getStreamingProxy() -> readNextChunk(handleId) -> close(handleId)`
+2. **Error handling**: All API functions use `wrapError()` to parse native `[ERROR_CODE] message` format into `BlobError`
+3. **Backpressure**: `writer.write()` must be awaited sequentially — parallel writes cause unbounded memory growth
+4. **Disposable**: BlobReader/BlobWriter implement `Symbol.dispose` for `using` syntax support
 
 ## Dependencies
-
-### Internal
-- `src/NativeBufferedBlob.ts` — Turbo Module spec (codegen input)
-- `src/module.ts` — Streaming proxy access; install() called on module import
-- `src/types.ts` — BlobReader/BlobWriter interfaces, wrappers
-- `src/api/` — High-level file ops, hash, download
-- `cpp/` — JSI HostObject, platform bridges, Android JNI loader
-- `ios/` — Swift implementation, ObjC++ bridge, handle registry
-- `android/` — Kotlin implementation, JNI bridge, handle registry
 
 ### External
 - **React Native** >= 0.76.0 (Turbo Module, JSI)
 - **react-native-builder-bob** — Build tool for TypeScript -> lib/
-- **TypeScript** ^5.9.2 — Codegen and type checking
-- **iOS**: CommonCrypto (hashing), URLSession (downloads), FileManager
-- **Android**: OkHttp 4.12.0 (downloads), Kotlin Coroutines, MessageDigest
+- **iOS**: CommonCrypto (hashing), NSURLSession (downloads), NSFileManager, NSInputStream/NSOutputStream
+- **Android**: OkHttp (downloads), Kotlin Coroutines (Dispatchers.IO), java.security.MessageDigest
 
-<!-- MANUAL: Add platform-specific build notes, versioning, or API evolution here -->
+<!-- MANUAL: -->
