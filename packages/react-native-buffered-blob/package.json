@@ -1,6 +1,6 @@
 {
   "name": "react-native-buffered-blob",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "No more OOM, just use buffered-blob",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
@@ -98,7 +98,9 @@
       "releaseName": "react-native-buffered-blob@${version}"
     },
     "hooks": {
-      "before:init": ["yarn prepare"],
+      "before:init": [
+        "yarn prepare"
+      ],
       "after:bump": "yarn prepare"
     },
     "plugins": {
