@@ -1,6 +1,6 @@
 {
   "name": "react-native-nitro-blob-monorepo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "No more OOM, just use buffered-blob",
   "scripts": {
@@ -14,7 +14,9 @@
     "typecheck": "yarn native typecheck && yarn wrapper typecheck",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "test": "jest",
-    "release": "release-it --only-version"
+    "release": "release-it",
+    "release:nitro": "yarn workspace react-native-nitro-buffered-blob release",
+    "release:turbo": "yarn workspace react-native-buffered-blob release"
   },
   "keywords": [
     "react-native",
