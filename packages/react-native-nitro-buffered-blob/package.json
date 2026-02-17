@@ -105,7 +105,6 @@
       "releaseName": "react-native-nitro-buffered-blob@${version}"
     },
     "hooks": {
-      "before:init": ["yarn prepare"],
       "after:bump": "yarn prepare"
     },
     "plugins": {

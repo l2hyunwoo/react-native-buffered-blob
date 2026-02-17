@@ -98,9 +98,6 @@
       "releaseName": "react-native-buffered-blob@${version}"
     },
     "hooks": {
-      "before:init": [
-        "yarn prepare"
-      ],
       "after:bump": "yarn prepare"
     },
     "plugins": {
