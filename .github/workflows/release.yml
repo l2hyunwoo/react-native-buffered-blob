@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to release'
+        required: true
+        type: choice
+        options:
+          - react-native-nitro-buffered-blob
+          - react-native-buffered-blob
+      version:
+        description: 'Version to release (e.g. 1.0.0, patch, minor, major)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Setup npm auth
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Git config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Release react-native-nitro-buffered-blob
+        if: inputs.package == 'react-native-nitro-buffered-blob'
+        run: yarn release:nitro --ci ${{ inputs.version && format('--increment {0}', inputs.version) || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release react-native-buffered-blob
+        if: inputs.package == 'react-native-buffered-blob'
+        run: yarn release:turbo --ci ${{ inputs.version && format('--increment {0}', inputs.version) || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
